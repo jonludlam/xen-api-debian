@@ -1,0 +1,36 @@
+Source: xen-api
+Section: unknown
+Priority: extra
+Maintainer: Jon Ludlam <jonathan.ludlam@eu.citrix.com>
+Build-Depends: debhelper (>= 8.0.0)
+Standards-Version: 3.9.2
+Homepage: <insert the upstream URL, if relevant>
+#Vcs-Git: git://git.debian.org/collab-maint/xen-api.git
+#Vcs-Browser: http://git.debian.org/?p=collab-maint/xen-api.git;a=summary
+
+Package: xapi
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: <insert up to 60 chars description>
+ <insert long description, indented with spaces>
+
+Package: xen-api-doc
+Architecture: all
+Description: documentation for xen-api
+ <insert long description, indented with spaces>
+
+Package: squeezed
+Architecture: any
+Description: The daemon in charge of requesting that domains balloon
+ This daemon takes requests in the form of xenstore trees and balloons 
+ domains up and down.
+
+Package: v6d
+Architecture: any
+Description: This daemon is the licensing daemon. 
+ It's only temporarily being installed until a better solution is 
+ sorted.
+
+Package: ocaml-xapi-client
+Architecture: any
+Description: The ocaml libraries for talking to xapi
