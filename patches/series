@@ -4,4 +4,4 @@ fix-base-path-script
 debian-base-path
 debian-qemu-location
 dom0-memory
-debian-changes-0.1-1
+interface-reconfigure
