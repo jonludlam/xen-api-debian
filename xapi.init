@@ -53,6 +53,8 @@ do_start()
 		echo "bridge" > /etc/xensource/network.conf
 	fi
 
+	mkdir -p /var/run/xend/boot
+
 	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --test > /dev/null \
 		|| return 1
 	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON -- \
