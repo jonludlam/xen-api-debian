@@ -63,6 +63,7 @@
 /usr/lib/xen-common/xapi/libexec/xapi-rolling-upgrade
 /usr/lib/xen-common/xapi/libexec/xenguest
 /usr/lib/xen-common/xapi/libexec/xha-lc
+/usr/lib/xen-common/xapi/libexec/pygrub.xcp
 /etc/bash_completion.d
 /etc/logrotate.d
 /etc/pam.d
