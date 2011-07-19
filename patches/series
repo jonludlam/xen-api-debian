@@ -6,3 +6,4 @@ debian-qemu-location
 dom0-memory
 interface-reconfigure
 pygrub-path
+udev-fixes

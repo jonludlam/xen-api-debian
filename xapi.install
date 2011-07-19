@@ -71,3 +71,4 @@
 /etc/xapi.conf
 /etc/xapi.d
 /etc/xensource
+/lib
