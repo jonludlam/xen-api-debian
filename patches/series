@@ -7,3 +7,4 @@ dom0-memory
 interface-reconfigure
 pygrub-path
 udev-fixes
+vncterm-fixes
