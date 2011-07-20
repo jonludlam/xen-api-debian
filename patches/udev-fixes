@@ -53,3 +53,25 @@
      fi
      ;;
  
+--- a/scripts/block-frontend
++++ b/scripts/block-frontend
+@@ -9,7 +9,7 @@
+ # If we block-attach a partition directly then events are generated
+ # with DEVPATHs of the form /block/xvde1 -- we act on these.
+ 
+-PARTITION=`echo ${DEVPATH} | cut -f 4 -d '/'`
++PARTITION=`echo ${DEVPATH} | cut -f 6 -d '/'`
+ if [ ! -z ${PARTITION} ]; then
+         # the bad kind of partition
+ 	exit
+@@ -19,8 +19,8 @@
+ 
+ # Extract the device type and ID from the PHYSDEVPATH eg
+ # PHYSDEVPATH=/devices/xen/vbd-51728
+-TYPE=`echo ${PHYSDEVPATH} | cut -f 4 -d '/' | cut -f 1 -d '-'`
+-DEVID=`echo ${PHYSDEVPATH} | cut -f 2 -d '-'`
++TYPE=`echo ${DEVPATH} | cut -f 3 -d '/' | cut -f 1 -d '-'`
++DEVID=`echo ${DEVPATH} | cut -f 3 -d '/' | cut -f 2 -d '-'`
+ 
+ XAPI=/xapi/${DOMID}/frontend/${TYPE}/${DEVID}
+ 
