@@ -11,7 +11,7 @@
  			      "eliloader", eliloader_path ]
 --- /dev/null
 +++ b/scripts/pygrub.xcp
-@@ -0,0 +1,910 @@
+@@ -0,0 +1,913 @@
 +#! /usr/bin/env python
 +#
 +# pygrub - simple python-based bootloader for Xen
@@ -28,6 +28,9 @@
 +#
 +
 +import os, sys, atexit, string, struct, tempfile, re
++
++sys.path.append("/usr/lib/xen-4.1/lib/python")
++
 +import copy
 +import logging
 +import platform
