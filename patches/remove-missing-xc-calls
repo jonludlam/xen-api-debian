@@ -1,0 +1,63 @@
+--- a/ocaml/xenops/domain.ml
++++ b/ocaml/xenops/domain.ml
+@@ -67,7 +67,7 @@
+ 
+ let save_signature = "XenSavedDomain\n"
+ let qemu_save_signature = "QemuDeviceModelRecord\n"
+-let hvmloader = "/usr/lib/xen/boot/hvmloader"
++let hvmloader = "/usr/lib/xen-4.1/boot/hvmloader"
+ let releaseDomain = "@releaseDomain"
+ let introduceDomain = "@introduceDomain"
+ 
+@@ -242,7 +242,7 @@
+   let di = Xc.domain_getinfo xc domid in
+ 
+   if di.Xc.hvm_guest then begin
+-	if Xc.hvm_check_pvdriver xc domid
++	if false 
+ 	then debug "HVM guest with PV drivers: not expecting any acknowledgement"
+ 	else Xc.domain_shutdown xc domid (shutdown_to_xc_shutdown req)
+   end else begin
+@@ -417,13 +417,15 @@
+ 	let hpet = int_platform_flag "hpet" in
+ 	let vpt_align = int_platform_flag "vpt_align" in
+ 
+-	let maybe_exn_ign name f opt =
++(*	let maybe_exn_ign name f opt =
+           maybe (fun opt -> try f opt with exn -> warn "exception setting %s: %s" name (Printexc.to_string exn)) opt
+-        in
++        in*)
+ 
+-	maybe_exn_ign "timer mode" (fun mode -> Xc.domain_set_timer_mode xc domid mode) timer_mode;
++(*	maybe_exn_ign "timer mode" (fun mode -> Xc.domain_set_timer_mode xc domid mode) timer_mode;
+         maybe_exn_ign "hpet" (fun hpet -> Xc.domain_set_hpet xc domid hpet) hpet;
+-        maybe_exn_ign "vpt align" (fun vpt_align -> Xc.domain_set_vpt_align xc domid vpt_align) vpt_align;
++        maybe_exn_ign "vpt align" (fun vpt_align -> Xc.domain_set_vpt_align xc domid vpt_align) vpt_align;*)
++
++	ignore(timer_mode,hpet,vpt_align);
+ 
+ 	Xc.domain_max_vcpus xc domid vcpus;
+ 	Xc.domain_set_memmap_limit xc domid (Memory.kib_of_mib xen_max_mib);
+@@ -858,10 +860,9 @@
+ 	);
+ 	debug "Suspend for domid %d finished" domid
+ 
+-let send_s3resume ~xc domid = Xc.domain_send_s3resume xc domid
+-
+-let trigger_power ~xc domid = Xc.domain_trigger_power xc domid
+-let trigger_sleep ~xc domid = Xc.domain_trigger_sleep xc domid
++let send_s3resume ~xc domid = failwith "Xc.domain_send_s3resume xc domid"
++let trigger_power ~xc domid = failwith "Xc.domain_trigger_power xc domid"
++let trigger_sleep ~xc domid = failwith "Xc.domain_trigger_sleep xc domid"
+ 
+ let vcpu_affinity_set ~xc domid vcpu cpumap =
+ 	(*
+@@ -944,7 +945,7 @@
+ 
+ let suppress_spurious_page_faults ~xc domid =
+   debug "suppress spurious page faults for dom%d" domid;
+-  Xc.domain_suppress_spurious_page_faults xc domid
++  failwith "Xc.domain_suppress_spurious_page_faults xc domid"
+ 
+ type cpuid_reg = Eax | Ebx | Ecx | Edx
+ type cpuid_rtype = Clear | Set | Default | Same | Keep

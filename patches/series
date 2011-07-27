@@ -1,3 +1,13 @@
+djs55-upstream-hotplug-patch
+dont-build-xiu
+expose-xmlrpc-nil-marshaller
+no-runstate-info
+no-max_nr_vcpus
+uuid_t_rather_than_string
+fix-xenguest
+use-sysfs-rather-than-proc
+qemu-fixes
+remove-missing-xc-calls
 install-locations
 fix-xenapi-py
 fix-base-path-script

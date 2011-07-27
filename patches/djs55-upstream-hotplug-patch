@@ -1,0 +1,765 @@
+--- a/ocaml/xapi/xapi_vbd.ml
++++ b/ocaml/xapi/xapi_vbd.ml
+@@ -57,12 +57,7 @@
+ 	    raise (Api_errors.Server_error(Api_errors.operation_not_allowed, 
+ 					   [ "Disk does not support surprise-remove" ]))
+ 	  end;
+-	  if Xapi_fist.simulate_vbd_unplug_failure () && not force then begin
+-	    debug "Simulating failure of Device.Vbd.clean_shutdown";
+-	    (* write the request into xenstore *)
+-	    Device.Vbd.request_shutdown ~xs device force;
+-	    raise (Device_common.Device_error(device, "fist"));
+-	  end else (if force then Device.hard_shutdown else Device.clean_shutdown) ~xs device;
++	  (if force then Device.hard_shutdown else Device.clean_shutdown) ~xs device;
+ 
+ 	  Device.Vbd.release ~xs device;
+ 	  debug "vbd_unplug: setting currently_attached to false";
+--- a/ocaml/xenops/device.ml
++++ b/ocaml/xenops/device.ml
+@@ -127,6 +127,74 @@
+     ignore_string(t.Xst.read backend_stub)
+   with Xb.Noent -> raise Device_not_found
+ 
++(** When hot-unplugging a device we ask nicely *)
++let request_closure ~xs (x: device) =
++	let backend_path = backend_path_of_device ~xs x in
++	let state_path = backend_path ^ "/state" in
++	Xs.transaction xs (fun t ->
++		let online_path = backend_path ^ "/online" in
++		debug "xenstore-write %s = 0" online_path;
++		t.Xst.write online_path "0";
++		let state = try Xenbus.of_string (t.Xst.read state_path) with _ -> Xenbus.Closed in
++		if state <> Xenbus.Closed then (
++			debug "Device.del_device setting backend to Closing";
++			t.Xst.write state_path (Xenbus.string_of Xenbus.Closing);
++		)
++	)
++
++let unplug_watch ~xs (x: device) = Watch.map (fun () -> "") (Watch.key_to_disappear (Hotplug.connected_node ~xs x))
++let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~xs x)
++let frontend_closed ~xs (x: device) = Watch.map (fun () -> "") (Watch.value_to_become (frontend_path_of_device ~xs x ^ "/state") (Xenbus.string_of Xenbus.Closed))
++
++let clean_shutdown ~xs (x: device) =
++	debug "Device.Generic.clean_shutdown %s" (string_of_device x);
++
++	let on_error error =
++	    debug "Device.Generic.shutdown_common: read an error: %s" error;
++	    (* CA-14804: Delete the error node contents *)
++	    safe_rm ~xs (error_path_of_device ~xs x);
++	    raise (Device_error (x, error)) in
++
++	request_closure ~xs x;
++	match Watch.wait_for ~xs (Watch.any_of [
++		`Disconnected, frontend_closed ~xs x;
++		`Unplugged, unplug_watch ~xs x; 
++		`Failed, error_watch ~xs x;
++	]) with
++		| `Disconnected, _ ->
++			debug "Device.Generic.clean_shutdown: frontend changed to state 6";
++			safe_rm ~xs (frontend_path_of_device ~xs x);
++			begin match Watch.wait_for ~xs (Watch.any_of [
++				`Unplugged, unplug_watch ~xs x;
++				`Failed, error_watch ~xs x;
++			]) with
++				| `Unplugged, _ -> rm_device_state ~xs x
++				| `Failed, error -> on_error error
++			end
++		| `Unplugged, _ -> rm_device_state ~xs x
++		| `Failed, error -> on_error error
++
++let hard_shutdown_request ~xs (x: device) =
++	debug "Device.Generic.hard_shutdown_request %s" (string_of_device x);
++
++	let backend_path = backend_path_of_device ~xs x in
++	let online_path = backend_path ^ "/online" in
++	debug "xenstore-write %s = 0" online_path;
++	xs.Xs.write online_path "0";
++
++	debug "Device.Generic.hard_shutdown about to blow away frontend";
++	let frontend_path = frontend_path_of_device ~xs x in
++	safe_rm xs frontend_path
++
++let hard_shutdown_complete ~xs (x: device) = unplug_watch ~xs x
++
++let hard_shutdown ~xs (x: device) = 
++	hard_shutdown_request ~xs x;
++	ignore(Watch.wait_for ~xs (hard_shutdown_complete ~xs x));
++	(* blow away the backend and error paths *)
++	debug "Device.Generic.hard_shutdown about to blow away backend and error paths";
++	rm_device_state ~xs x
++
+ (*
+ (* Assume we've told the backend to close. Watch both the error node and one other path.
+    When the watch fires, call a predicate function and look for an error node.
+@@ -301,59 +369,11 @@
+ 
+ let uses_blktap ~phystype = List.mem phystype [ Qcow; Vhd; Aio ]
+ 
+-(** Request either a clean or hard shutdown *)
+-let request_shutdown ~xs (x: device) (force: bool) =
+-	let request = if force then "force" else "normal" in
+-
+-	debug "Device.Vbd.request_shutdown %s %s" (string_of_device x) request;
+-
+-	let backend_path = backend_path_of_device ~xs x in
+-	let request_path = backend_shutdown_request_path_of_device ~xs x in
+-	let online_path = backend_path ^ "/online" in
+-
+-	(* Prevent spurious errors appearing by not writing online=0 if force *)
+-	if not(force) then begin
+-	  debug "xenstore-write %s = 0" online_path;
+-	  xs.Xs.write online_path "0";
+-	end;
+-	debug "xenstore-write %s = %s" request_path request;
+-	xs.Xs.write request_path request
+-
+-(** Return the event to wait for when the shutdown has completed *)
+-let shutdown_done ~xs (x: device): string Watch.t = 
+-	Watch.value_to_appear (backend_shutdown_done_path_of_device ~xs x)
+-
+-let hard_shutdown_request ~xs (x: device) = request_shutdown ~xs x true
+-let hard_shutdown_complete = shutdown_done
++let hard_shutdown_request  = Generic.hard_shutdown_request
++let hard_shutdown_complete = Generic.hard_shutdown_complete
+ 
+-let clean_shutdown ~xs (x: device) =
+-	debug "Device.Vbd.clean_shutdown %s" (string_of_device x);
+-
+-	request_shutdown ~xs x false; (* normal *)
+-	(* Allow the domain to reject the request by writing to the error node *)
+-	let shutdown_done = shutdown_done ~xs x in
+-	let error = Watch.value_to_appear (error_path_of_device ~xs x) in
+-	match Watch.wait_for ~xs (Watch.any_of [ `OK, shutdown_done; `Failed, error ]) with
+-	| `OK, _ ->
+-	    debug "Device.Vbd.shutdown_common: shutdown-done appeared";
+-	    (* Delete the trees (otherwise attempting to plug the device in again doesn't
+-	       work.) This also clears any stale error nodes. *)
+-	    Generic.rm_device_state ~xs x
+-	| `Failed, error ->
+-	    (* CA-14804: Delete the error node contents *)
+-	    Generic.safe_rm ~xs (error_path_of_device ~xs x);
+-	    debug "Device.Vbd.shutdown_common: read an error: %s" error;
+-	    raise (Device_error (x, error))
+-
+-let hard_shutdown ~xs (x: device) = 
+-	debug "Device.Vbd.hard_shutdown %s" (string_of_device x);
+-	request_shutdown ~xs x true; (* force *)
+-
+-	(* We don't watch for error nodes *)
+-	ignore_string (Watch.wait_for ~xs (shutdown_done ~xs x));
+-	Generic.rm_device_state ~xs x;
+-
+-	debug "Device.Vbd.hard_shutdown complete"
++let clean_shutdown = Generic.clean_shutdown
++let hard_shutdown = Generic.hard_shutdown
+ 
+ let release ~xs (x: device) =
+ 	debug "Device.Vbd.release %s" (string_of_device x);
+@@ -398,17 +418,13 @@
+ 	   node is destroyed then we assume the domain is dead and is being reaped and return an error *)
+ 	match Watch.wait_for ~xs (Watch.any_of [ 
+ 				    `OK, Watch.value_to_appear response_path; (* pause-done *)
+-				    `Destroyed, Watch.map (fun () -> "") (Watch.key_to_disappear backend_path); (* backend has been deleted *) 
+-				    `Shutdown, shutdown_done ~xs x; (* device has shutdown *) ]) with
++				    `Destroyed, Watch.map (fun () -> "") (Watch.key_to_disappear backend_path); (* backend has been deleted *)  ]) with
+ 	| `OK, _ ->
+ 	    debug "Device.Vbd.pause %s complete" (string_of_device x);
+ 	    token
+ 	| `Destroyed, _ ->
+ 	    debug "Device.Vbd.pause %s failed: backend has been deleted" (string_of_device x);
+ 	    raise Device_shutdown
+-	| `Shutdown, _ ->
+-	    error "Device.Vbd.pause %s failed: backend has shutdown" (string_of_device x);
+-	    raise Device_shutdown
+   
+ let unpause ~xs (x: device) (token: string) = 
+ 	debug "Device.Vbd.unpause %s token=%s" (string_of_device x) token;
+@@ -444,19 +460,14 @@
+ 	if fast_track_success
+ 	then raise Pause_token_mismatch
+ 	else begin
+-	  let shutdown_done = Watch.map (fun _ -> ()) (shutdown_done ~xs x) in
+ 	  match Watch.wait_for ~xs (Watch.any_of [ 
+ 				      `OK, Watch.key_to_disappear response_path; (* pause-done *)
+-				      `Destroyed, Watch.key_to_disappear backend_path; (* backend has been deleted *)
+-				      `Shutdown, shutdown_done; (* device has shutdown *) ]) with
++				      `Destroyed, Watch.key_to_disappear backend_path; (* backend has been deleted *)]) with
+ 	  | `OK, _ ->
+ 	      debug "Device.Vbd.unpause %s complete" (string_of_device x)
+ 	  | `Destroyed, _ ->
+ 	      (* We consider this to be 'unpaused' *)
+ 	      debug "Device.Vbd.unpause %s: backend has been deleted, considering it 'unpaused'" (string_of_device x)
+-	  | `Shutdown, _ ->
+-	      (* We consider this to be 'unpaused' *)
+-	      debug "Device.Vbd.unpause %s: device has shut itself down, considering it 'unpaused'" (string_of_device x);
+ 	end
+ 
+ let is_paused ~xs (x: device) = 
+@@ -525,11 +536,9 @@
+ 
+ 
+ 	Generic.add_device ~xs device back front extra_private_keys;
+-	Hotplug.wait_for_plug ~xs device;
++
+ 	(* 'Normally' we connect devices to other domains, and cannot know whether the
+ 	   device is 'available' from their userspace (or even if they have a userspace).
+-	   The best we can do is just to wait for the backend hotplug scripts to run,
+-	   indicating that the backend has locked the resource.
+ 	   In the case of domain 0 we can do better: we have custom hotplug scripts
+ 	   which call us back when the device is actually available to userspace. We need
+ 	   to wait for this condition to make the template installers work.
+@@ -706,57 +715,11 @@
+ 	  (match rate with | None -> [] | Some(rate, timeslice) -> [ "rate", Int64.to_string rate; "timeslice", Int64.to_string timeslice ]) in
+ 
+ 	Generic.add_device ~xs device back front extra_private_keys;
+-	Hotplug.wait_for_plug ~xs device;
+ 	device
+ 
+-(** When hot-unplugging a device we ask nicely *)
+-let request_closure ~xs (x: device) =
+-	let backend_path = backend_path_of_device ~xs x in
+-	let state_path = backend_path ^ "/state" in
+-	Xs.transaction xs (fun t ->
+-		let online_path = backend_path ^ "/online" in
+-		debug "xenstore-write %s = 0" online_path;
+-		t.Xst.write online_path "0";
+-		let state = try Xenbus.of_string (t.Xst.read state_path) with _ -> Xenbus.Closed in
+-		if state <> Xenbus.Closed then (
+-			debug "Device.del_device setting backend to Closing";
+-			t.Xst.write state_path (Xenbus.string_of Xenbus.Closing);
+-		)
+-	)
+-
+-let unplug_watch ~xs (x: device) = Watch.map (fun () -> "") (Watch.key_to_disappear (Hotplug.status_node x))
+-let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~xs x) 
++let clean_shutdown = Generic.clean_shutdown
+ 
+-let clean_shutdown ~xs (x: device) =
+-	debug "Device.Vif.clean_shutdown %s" (string_of_device x);
+-
+-	request_closure ~xs x;
+-	match Watch.wait_for ~xs (Watch.any_of [ `OK, unplug_watch ~xs x; `Failed, error_watch ~xs x ]) with
+-	| `OK, _ ->
+-	    (* Delete the trees (otherwise attempting to plug the device in again doesn't
+-	       work. This also clears any stale error nodes. *)
+-	    Generic.rm_device_state ~xs x
+-	| `Failed, error ->
+-	    debug "Device.Vif.shutdown_common: read an error: %s" error;
+-	    raise (Device_error (x, error))	
+-
+-let hard_shutdown ~xs (x: device) =
+-	debug "Device.Vif.hard_shutdown %s" (string_of_device x);
+-
+-	let backend_path = backend_path_of_device ~xs x in
+-	let online_path = backend_path ^ "/online" in
+-	debug "xenstore-write %s = 0" online_path;
+-	xs.Xs.write online_path "0";
+-
+-	debug "Device.Vif.hard_shutdown about to blow away frontend";
+-	let frontend_path = frontend_path_of_device ~xs x in
+-	Generic.safe_rm xs frontend_path;
+-	
+-	ignore_string (Watch.wait_for ~xs (unplug_watch ~xs x));
+-
+-	(* blow away the backend and error paths *)
+-	debug "Device.Vif.hard_shutdown about to blow away backend and error paths";
+-	Generic.rm_device_state ~xs x
++let hard_shutdown = Generic.hard_shutdown
+ 
+ let set_carrier ~xs (x: device) carrier = 
+ 	debug "Device.Vif.set_carrier %s <- %b" (string_of_device x) carrier;
+--- a/ocaml/xenops/device.mli
++++ b/ocaml/xenops/device.mli
+@@ -77,8 +77,6 @@
+ 	val hard_shutdown_request : xs:Xs.xsh -> device -> unit
+ 	val hard_shutdown_complete : xs:Xs.xsh -> device -> string Watch.t
+ 
+-	(* For testing: *)
+-	val request_shutdown : xs:Xs.xsh -> device -> bool -> unit
+ end
+ 
+ module Vif :
+--- a/ocaml/xenops/device_common.ml
++++ b/ocaml/xenops/device_common.ml
+@@ -119,53 +119,90 @@
+ 		   devid = backend.devid } in
+   { backend = backend; frontend = frontend }
+ 
++let parse_kind k =
++	try
++		Some (kind_of_string k)
++	with Unknown_device_type _ -> None
++
++let parse_int i = 
++	try
++		Some (int_of_string i)
++	with _ -> None
++
++let parse_frontend_link x =
++	match String.split '/' x with
++		| [ ""; "local"; "domain"; domid; "device"; kind; devid ] ->
++			begin
++				match parse_int domid, parse_kind kind, parse_int devid with
++					| Some domid, Some kind, Some devid ->
++						Some { domid = domid; kind = kind; devid = devid }
++					| _, _, _ -> None
++			end
++		| _ -> None
++
++let parse_backend_link x = 
++	match String.split '/' x with
++		| [ ""; "local"; "domain"; domid; "backend"; kind; _; devid ] ->
++			begin
++				match parse_int domid, parse_kind kind, parse_int devid with
++					| Some domid, Some kind, Some devid ->
++						Some { domid = domid; kind = kind; devid = devid }
++					| _, _, _ -> None
++			end
++		| _ -> None
++
++let readdir ~xs d = try xs.Xs.directory d with Xb.Noent -> []
++let to_list ys = List.concat (List.map Opt.to_list ys)
++let list_kinds ~xs dir = to_list (List.map parse_kind (readdir ~xs dir))
++
++let list_frontends ~xs domid = 
++	let frontend_dir = xs.Xs.getdomainpath domid ^ "/device" in
++	let kinds = list_kinds ~xs frontend_dir in
++	List.concat (List.map
++		(fun k ->
++			let dir = sprintf "%s/%s" frontend_dir (string_of_kind k) in
++			let devids = to_list (List.map parse_int (readdir ~xs dir)) in
++			to_list (List.map
++				(fun devid ->
++					(* domain [domid] believes it has a frontend for
++					   device [devid] *)
++					let frontend = { domid = domid; kind = k; devid = devid } in
++					let be = xs.Xs.read (sprintf "%s/%d/backend" dir devid) in
++					Opt.map (fun b -> { backend = b; frontend = frontend })
++						(parse_backend_link be)
++				) devids)
++		) kinds)
++
++let list_backends ~xs domid =
++	let backend_dir = xs.Xs.getdomainpath domid ^ "/backend" in
++	let kinds = list_kinds ~xs backend_dir in
++
++	List.concat (List.map
++		(fun k ->
++			let dir = sprintf "%s/%s" backend_dir (string_of_kind k) in
++			let domids = to_list (List.map parse_int (readdir ~xs dir)) in
++			List.concat (List.map
++				(fun frontend_domid ->
++					let dir = sprintf "%s/%s/%d" backend_dir (string_of_kind k) frontend_domid in
++					let devids = to_list (List.map parse_int (readdir ~xs dir)) in
++					to_list (List.map
++						(fun devid ->
++							(* domain [domid] believes it has a backend for
++							   [frontend_domid] of type [k] with devid [devid] *)
++							let backend = { domid = domid; kind = k; devid = devid } in
++							let fe = xs.Xs.read (sprintf "%s/%d/frontend" dir devid) in
++							Opt.map (fun f -> { backend = backend; frontend = f })
++								(parse_frontend_link fe)
++						) devids)
++				) domids)
++		) kinds)
++
+ (** Return a list of devices connecting two domains. Ignore those whose kind 
+     we don't recognise *)
+ let list_devices_between ~xs driver_domid user_domid = 
+-  let backend_dir = xs.Xs.getdomainpath driver_domid ^ "/backend" in
+-  let kinds = try xs.Xs.directory backend_dir with Xb.Noent -> [] in
+-  let kinds = List.concat 
+-    (List.map 
+-       (fun k -> 
+-	try [ kind_of_string k ]
+-	with Unknown_device_type _ ->
+-	  debug "Ignoring unknown backend device type: %s" k;
+-	  []) kinds) in
+-  List.concat
+-    (List.map 
+-       (fun k ->
+-	  let dir = sprintf "%s/%s/%d" backend_dir (string_of_kind k) user_domid in
+-	  let devids = try xs.Xs.directory dir with _ -> [] in
+-	  List.concat
+-	    (List.map 
+-	       (fun devid ->
+-		  try
+-		    let backend = { domid = driver_domid; kind = k; devid = int_of_string devid } in
+-		    (* Ignore if we fail to parse the frontend link *)
+-		    let fe = xs.Xs.read (dir ^ "/" ^ devid ^ "/frontend") in
+-		    let devid = int_of_string devid in
+-		    match String.split '/' fe with
+-		    | [ ""; "local"; "domain"; domid'; "device"; k'; devid' ] ->
+-			let domid' = int_of_string domid'
+-			and k' = kind_of_string k' 
+-			and devid' = int_of_string devid' in
+-			if domid' <> user_domid then begin
+-			  debug "Malformed frontend link %s: domid should be %d" fe user_domid;
+-			  []
+-			end else if devid' <> devid then begin
+-			  debug "Malformed frontend link %s: devid should be %d" fe devid;
+-			  []
+-			end else begin
+-			  let frontend = { domid = user_domid; kind = k'; devid = devid' } in
+-			  [ { frontend = frontend; backend = backend } ]
+-			end
+-		    | _ -> 
+-			debug "Malformed frontend link %s" fe;
+-			[]
+-		  with _ -> []) devids)
+-       ) kinds
+-    )
+-
++	List.filter
++		(fun d -> d.frontend.domid = user_domid) 
++		(list_backends ~xs driver_domid)
+   
+ 
+ let print_device domid kind devid =
+--- a/ocaml/xenops/device_common.mli
++++ b/ocaml/xenops/device_common.mli
+@@ -51,6 +51,12 @@
+ val string_of_kind : kind -> string
+ val kind_of_string : string -> kind
+ 
++(** [list_backends xs domid] returns a list of devices where there is a
++	backend in [domid]. *)
++val list_backends : xs:Xs.xsh -> Xc.domid -> device list
++(** [list_frontends xs domid] returns a list of devices where there is a
++	frontend in [domid]. *)
++val list_frontends : xs:Xs.xsh -> Xc.domid -> device list
+ (** Return a list of devices connecting two domains. Ignore those whose kind 
+     we don't recognise *)
+ val list_devices_between : xs:Xs.xsh -> Xc.domid -> Xc.domid -> device list
+--- a/ocaml/xenops/domain.ml
++++ b/ocaml/xenops/domain.ml
+@@ -284,7 +284,10 @@
+ let destroy ?(preserve_xs_vm=false) ~xc ~xs domid =
+ 	let dom_path = xs.Xs.getdomainpath domid in
+ 
+-	let all_devices = list_devices_between ~xs 0 domid in
++	(* These are the devices with a frontend in [domid] and a well-formed backend
++	   in some other domain *)
++	let all_devices = list_frontends ~xs domid in
++	
+ 	debug "Domain.destroy: all known devices = [ %a ]" (fun () -> String.concat "; ")
+           (List.map string_of_device all_devices);
+ 
+--- a/ocaml/xenops/hotplug.ml
++++ b/ocaml/xenops/hotplug.ml
+@@ -61,9 +61,6 @@
+ let get_hotplug_path (x: device) =
+ 	sprintf "%s/hotplug/%s/%d" (get_private_path x.frontend.domid) (string_of_kind x.backend.kind) x.backend.devid
+ 
+-(* The path in xenstore written to by the hotplug scripts *)
+-let status_node (x: device) = get_hotplug_path x ^ "/hotplug"
+-
+ (* The path in xenstore written to by the frontend hotplug scripts *)
+ let frontend_status_node (x: device) = 
+ 	sprintf "%s/frontend/%s/%d/hotplug" (get_private_path x.frontend.domid) (string_of_kind x.frontend.kind) x.frontend.devid
+@@ -92,7 +89,7 @@
+    (ie not an API-initiated hotunplug; this is start of day) then we check the state 
+    of the backend hotplug scripts. *)
+ let device_is_online ~xs (x: device) = 
+-  let backend_hotplug () = try xs.Xs.read (status_node x) = "online" with Xb.Noent -> false
++  let backend_hotplug () = try xs.Xs.read (connected_node ~xs x) = "connected" with Xb.Noent -> false
+   and backend_shutdown () = try ignore(xs.Xs.read (backend_shutdown_done_path_of_device ~xs x)); true with Xb.Noent -> false 
+   and backend_request () = try ignore(xs.Xs.read (backend_shutdown_request_path_of_device ~xs x)); true with Xb.Noent -> false in
+ 
+@@ -104,7 +101,7 @@
+       then not(backend_shutdown ())
+       else backend_hotplug ()
+ 
+-(* Poll a device (vif) to see whether it has hotplug-status = connected *)
++(* Poll a device to see whether it has hotplug-status = connected *)
+ let device_is_connected ~xs (x: device) =
+ 	try
+ 		let path = connected_node ~xs x in
+@@ -116,7 +113,7 @@
+   try
+     Stats.time_this "udev backend add event" 
+       (fun () ->
+-    ignore(Watch.wait_for ~xs ~timeout:hotplug_timeout (Watch.value_to_appear (status_node x)));
++    ignore(Watch.wait_for ~xs ~timeout:hotplug_timeout (Watch.value_to_appear (connected_node ~xs x)));
+       );
+     debug "Synchronised ok with hotplug script: %s" (string_of_device x)
+   with Watch.Timeout _ ->
+@@ -127,7 +124,7 @@
+   try
+     Stats.time_this "udev backend remove event" 
+       (fun () ->
+-    ignore(Watch.wait_for ~xs ~timeout:hotplug_timeout (Watch.key_to_disappear (status_node x)));
++    ignore(Watch.wait_for ~xs ~timeout:hotplug_timeout (Watch.key_to_disappear (connected_node ~xs x)));
+       );
+     debug "Synchronised ok with hotplug script: %s" (string_of_device x)
+   with Watch.Timeout _ ->
+--- a/ocaml/xenops/xenops.ml
++++ b/ocaml/xenops/xenops.ml
+@@ -148,6 +148,11 @@
+ 	with _ ->
+ 		()
+ 
++let print_table (rows: string list list) =
++	let widths = Table.compute_col_widths rows in
++	let sll = List.map (List.map2 Table.right widths) rows in
++	List.iter (fun line -> print_endline (String.concat " | " line)) sll
++
+ let list_domains ~xc ~verbose =
+ 	let header () =
+ 		if verbose then
+@@ -186,38 +191,88 @@
+ 			[ domid; state; cpu_time; handle ]
+ 		in
+ 
+-	let print (rows: string list list) =
+-		let widths = Table.compute_col_widths rows in
+-		let sll = List.map (List.map2 Table.right widths) rows in
+-		List.iter (fun line -> print_endline (String.concat " | " line)) sll
+-		in
+-
+ 	let l = Xc.domain_getinfolist xc 0 in
+ 	let header = header () in
+ 	let infos = List.map sl_of_domaininfo l in
+-	print (header :: infos)
++	print_table (header :: infos)
+ 
+-let list_devices ~xs ~domid = 
+-	(* Assume all drivers are in domain 0 *)
+-	let all = list_devices_between ~xs 0 domid in
+-	let string_of_state path = 
+-	  try
+-	    Xenbus.to_string_desc (Xenbus.of_string (xs.Xs.read (sprintf "%s/state" path)))
+-	  with _ -> "gone" in
+-	List.iter (fun device ->
+-		     let fe = frontend_path_of_device ~xs device
+-		     and be = backend_path_of_device ~xs device in
+-		     let bdev = try xs.Xs.read (sprintf "%s/dev" be) with _ -> "" in
+-		     printf "%s[%d] is %s to dom(%d) ty(%s) devid(%d %s) state(%s)\n"
+-		       (string_of_kind device.frontend.kind) 
+-		       device.frontend.devid 
+-		       (string_of_state fe)
+-		       device.backend.domid
+-		       (string_of_kind device.backend.kind)
+-		       device.backend.devid
+-		       bdev 
+-		       (string_of_state be)
+-		  ) all
++(*
++   backend                  frontend
++   ---------------------------------------------------------------
++   domain domstate ty devid state -> domain domstate ty devid state
++
++   where domstate = R | S | D | ?
++   state = 1 | 2 | 3 | 4 | 5 | 6 | ?          
++*)
++
++type device_stat = {
++	device: device;
++	backend_proto: string;   (* blk or net *)
++	backend_device: string;  (* physical device eg. fd:2 *)
++	backend_state: string;   (* 1...6 *)
++	frontend_type: string;   (* cdrom or hd *)
++	frontend_device: string; (* linux device name *)
++	frontend_state: string;  (* 1..6 *)
++}
++
++let device_state_to_sl ds =
++	let int = string_of_int in
++	[ int ds.device.backend.domid; ds.backend_proto; ds.backend_device; ds.backend_state; "->"; ds.frontend_state; ds.frontend_type; ds.frontend_device; int ds.device.frontend.domid; ]
++
++let stat ~xs d =
++	let frontend_state = try xs.Xs.read (sprintf "%s/state" (frontend_path_of_device ~xs d)) with Xb.Noent -> "??" in
++	let backend_state = try xs.Xs.read (sprintf "%s/state" (backend_path_of_device ~xs d)) with Xb.Noent -> "??" in
++	(* The params string can be very long, truncate to a more reasonable width *)
++	let truncate params =
++		let limit = 10 in
++		let dots = "..." in
++		let len = String.length params in
++		if len <= limit 
++		then params
++		else
++			let take = limit - (String.length dots) in
++			dots ^ (String.sub params (len - take) take) in
++			
++	let backend_proto = match d.backend.kind with
++		| Vbd | Tap -> "blk"
++		| Vif -> "net"
++		| x -> string_of_kind x in
++	let frontend_type = match d.frontend.kind with
++		| Vbd | Tap -> 
++			let be = frontend_path_of_device ~xs d in
++			(try if xs.Xs.read (sprintf "%s/device-type" be) = "cdrom" then "cdrom" else "disk" with _ -> "??")
++		| x -> string_of_kind x in
++	let backend_device = match d.backend.kind with
++		| Vbd | Tap -> 
++			let be = backend_path_of_device ~xs d in
++			(try xs.Xs.read (sprintf "%s/physical-device" be)
++			with Xb.Noent ->
++				(try truncate (xs.Xs.read (sprintf "%s/params" be))
++				with Xb.Noent -> "??"))
++		| Vif -> "-"
++		| _ -> string_of_int d.backend.devid in
++	let frontend_device = match d.frontend.kind with
++		| Vbd | Tap -> Device_number.to_linux_device (Device_number.of_xenstore_key d.frontend.devid)
++		| _ -> string_of_int d.frontend.devid in
++	{ device = d; frontend_state = frontend_state; backend_state = backend_state; frontend_device = frontend_device; frontend_type = frontend_type; backend_proto = backend_proto; backend_device = backend_device }
++
++let list_devices ~xc ~xs =
++	let header = [ "be"; "proto"; "dev"; "state"; "->"; "state"; "kind"; "dev"; "fe" ] in
++	let of_device (d: device) : string list =
++		device_state_to_sl (stat ~xs d) in
++	let l = Xc.domain_getinfolist xc 0 in
++	let domids = List.map (fun x -> x.Xc.domid) l in
++	let devices = 
++		Listext.List.setify (
++			List.concat (
++				List.map
++					(fun domid ->
++						list_backends ~xs domid @ (list_frontends ~xs domid)
++				) domids
++			)
++		) in
++	let infos = List.map of_device devices in
++	print_table (header :: infos)
+ 
+ let add_vbd ~xs ~hvm ~domid ~device_number ~phystype ~physpath ~dev_type ~mode ~backend_domid =
+ 	let phystype = Device.Vbd.physty_of_string phystype in
+@@ -576,7 +631,7 @@
+ 		("affinity_set"   , common @ affinity_args @ affinity_set_args);
+ 		("affinity_get"   , common @ affinity_args);
+ 		("list_domains"   , list_args);
+-		("list_devices"   , common);
++		("list_devices"   , []);
+ 		("add_vbd"        , common @ vbd_args @ backend_args);
+ 		("del_vbd"        , common @ vbd_args @ backend_args);
+ 		("add_vif"        , common @ vif_args @ backend_args);
+@@ -712,8 +767,7 @@
+ 	| "list_domains" ->
+ 		with_xc (fun xc -> list_domains ~xc ~verbose)
+ 	| "list_devices" ->
+-		assert_domid ();
+-		with_xs (fun xs -> list_devices ~xs ~domid)
++		with_xc_and_xs (fun xc xs -> list_devices ~xc ~xs)
+ 	| "sched_domain" ->
+ 		assert_domid ();
+ 		with_xc (fun xc -> sched_domain ~xc ~domid ~weight ~cap)
+--- a/scripts/block
++++ /dev/null
+@@ -1,83 +0,0 @@
+-#!/bin/sh
+-
+-TYPE=`echo ${XENBUS_PATH} | cut -f 2 -d '/'`
+-DOMID=`echo ${XENBUS_PATH} | cut -f 3 -d '/'`
+-DEVID=`echo ${XENBUS_PATH} | cut -f 4 -d '/'`
+-
+-DEVNAME=$TYPE-$DOMID-$DEVID
+-
+-SYSFS_PATH=/sys/devices/xen-backend/$DEVNAME
+-
+-XAPI=/xapi/${DOMID}/hotplug/${TYPE}/${DEVID}
+-
+-HOTPLUG="${XAPI}/hotplug"
+-
+-KTHREAD_PID="${XENBUS_PATH}/kthread-pid"
+-
+-PAUSE="${XENBUS_PATH}/pause"
+-PAUSE_DONE="${XENBUS_PATH}/pause-done"
+-
+-SHUTDOWN="${XENBUS_PATH}/shutdown-request"
+-SHUTDOWN_DONE="${XENBUS_PATH}/shutdown-done"
+-
+-syslog ()
+-{
+-	logger -pdaemon.info -tscripts-block -- "$DEVNAME[$ACTION]: $*"
+-}
+-
+-case "$ACTION" in
+-add)
+-	syslog "writing $HOTPLUG = online"
+-	xenstore write "$HOTPLUG" "online"
+-
+-	# RUNNING          (1<<0)
+-	# PAUSE_DONE       (1<<1)
+-	# SHUTDOWN_DONE    (1<<2)
+-	# PAUSE_REQUEST    (1<<3)
+-	# SHUTDOWN_REQUEST (1<<4)
+-
+-	# echo $(((1<<1) | (1<<3))) > $SYSFS_PATH/queue_events # unpaused|paused
+-	;;
+-
+-change)
+-	if pid=$(xenstore read "$KTHREAD_PID" 2>/dev/null)
+-	then
+-		state=running
+-	else
+-		state=stopped
+-	fi
+-
+-	syslog "kthread-pid = '$pid'"
+-
+-	case "$state" in
+-		stopped)
+-			if xenstore exists "$PAUSE"
+-			then
+-				syslog "writing $PAUSE_DONE"
+-				xenstore write "$PAUSE_DONE" ""
+-			fi
+-			if xenstore exists "$SHUTDOWN"
+-			then
+-				syslog "writing $SHUTDOWN_DONE"
+-				xenstore write "$SHUTDOWN_DONE" ""
+-			fi
+-			;;
+-		running)
+-			if xenstore exists "$PAUSE_DONE"
+-			then
+-				syslog "removing $PAUSE_DONE"
+-				xenstore rm "$PAUSE_DONE"
+-			fi
+-			if xenstore exists "$SHUTDOWN_DONE"
+-			then
+-				syslog "WARNING: queue restart in shutdown state."
+-			fi
+-			;;
+-	esac
+-	;;
+-
+-remove)
+-	syslog "removing $HOTPLUG"
+-	xenstore rm "$HOTPLUG"
+-	;;
+-esac
+--- a/scripts/vif
++++ b/scripts/vif
+@@ -221,6 +221,7 @@
+ XAPI=/xapi/${DOMID}/hotplug/vif/${DEVID}
+ HOTPLUG=/xapi/${DOMID}/hotplug/vif/${DEVID}
+ PRIVATE=/xapi/${DOMID}/private/vif/${DEVID}
++HOTPLUG_STATUS="${XENBUS_PATH}/hotplug-status"
+ 
+ logger -t scripts-vif "Called as \"$@\" domid:$DOMID devid:$DEVID mode:$NETWORK_MODE"
+ case "${ACTION}" in
+@@ -237,11 +238,12 @@
+         add_to_bridge
+         handle_promiscuous
+ 
++        # only for the benefit of xenrt test case, see CA-61528
+         xenstore-write "${HOTPLUG}/vif" "${dev}"
+         xenstore-write "${HOTPLUG}/hotplug" "online"
+ 
+-        # xs-xen.pq.hq:91e986b8e49f netback-wait-for-hotplug
+-        xenstore-write "/local/domain/0/backend/vif/${DOMID}/${DEVID}/hotplug-status" "connected"
++		logger -t script-vif "${dev}: writing ${HOTPLUG_STATUS}=connected"
++		xenstore-write "${HOTPLUG_STATUS}" "connected"
+         call_hook_script $DOMID "${ACTION}"
+     fi
+     ;;
+@@ -255,6 +257,8 @@
+ remove)
+     if [ "${TYPE}" = "vif" ] ;then
+         xenstore-rm "${HOTPLUG}/hotplug"
++		logger -t script-vif "${dev}: removing ${HOTPLUG_STATUS}"
++		xenstore-rm "${HOTPLUG_STATUS}"
+         call_hook_script $DOMID "${ACTION}"
+     fi
+     logger -t scripts-vif "${dev} has been removed"

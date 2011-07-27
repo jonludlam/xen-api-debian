@@ -1,11 +1,5 @@
 --- a/OMakefile
 +++ b/OMakefile
-@@ -1,4 +1,4 @@
--SCRIPTS=$(getenv PWD)/scripts
-+SCRIPTS=$(shell pwd)/scripts
- IPROG=$(SCRIPTS)/install.sh 755
- IDATA=$(SCRIPTS)/install.sh 644
- 
 @@ -50,7 +50,7 @@
  CFLAGS+=-I$(shell ocamlc -where)
  
