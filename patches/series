@@ -18,3 +18,4 @@ interface-reconfigure
 pygrub-path
 udev-fixes
 vncterm-fixes
+dom0-memory-record
