@@ -19,3 +19,4 @@ pygrub-path
 udev-fixes
 vncterm-fixes
 dom0-memory-record
+remove-rewrite-management-interface
