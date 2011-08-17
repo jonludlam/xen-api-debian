@@ -10,7 +10,7 @@ Homepage: http://www.github.com/xen-org/xen-api
 
 Package: xapi
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, stunnel
 Description: <insert up to 60 chars description>
  <insert long description, indented with spaces>
 
