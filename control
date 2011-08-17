@@ -4,7 +4,7 @@ Priority: extra
 Maintainer: Jon Ludlam <jonathan.ludlam@eu.citrix.com>
 Build-Depends: debhelper (>= 8.0.0), ocaml-native-compilers, ocaml-findlib, camlp4, camlp4-extra, blktap-dev, autotools-dev, dh-autoreconf, libtype-conv-camlp4-dev, libxmlm-ocaml-dev, uuid-dev, xen-api-libs, omake, libxen-ocaml-dev, libxen-ocaml, libpam-dev, zlib1g-dev, xen-utils, libxen-dev
 Standards-Version: 3.9.2
-Homepage: <insert the upstream URL, if relevant>
+Homepage: http://www.github.com/xen-org/xen-api
 #Vcs-Git: git://git.debian.org/collab-maint/xen-api.git
 #Vcs-Browser: http://git.debian.org/?p=collab-maint/xen-api.git;a=summary
 
