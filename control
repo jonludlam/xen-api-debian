@@ -10,9 +10,11 @@ Homepage: <insert the upstream URL, if relevant>
 
 Package: xapi
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: <insert up to 60 chars description>
- <insert long description, indented with spaces>
+Depends: ${shlibs:Depends}, ${misc:Depends}, squeezed, v6d, fe, blktap-utils, blktap-dkms, xen-sm, xen-hypervisor-4.1-amd64
+Recommends: vncterm
+Description: The Xen API server
+ The Xen API server, which allows the control of the virtual machines hosted via
+ the XenAPI.
 
 Package: xen-api-doc
 Architecture: all
@@ -21,13 +23,14 @@ Description: documentation for xen-api
 
 Package: squeezed
 Architecture: any
-Description: The daemon in charge of requesting that domains balloon
+Depends: ${shlibs:Depends}
+Description: A daemon in charge of ballooning xen domains
  This daemon takes requests in the form of xenstore trees and balloons 
  domains up and down.
 
 Package: v6d
 Architecture: any
-Description: This daemon is the licensing daemon. 
+Description: The feature daemon for xapi. 
  It's only temporarily being installed until a better solution is 
  sorted.
 
