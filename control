@@ -10,7 +10,7 @@ Homepage: <insert the upstream URL, if relevant>
 
 Package: xapi
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, squeezed, v6d, fe, blktap-utils, blktap-dkms, xen-sm, xen-hypervisor-4.1-amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}, squeezed, v6d, fe, blktap-utils, blktap-dkms, xen-sm, xen-hypervisor-4.1, stunnel
 Recommends: vncterm
 Description: The Xen API server
  The Xen API server, which allows the control of the virtual machines hosted via
@@ -23,7 +23,7 @@ Description: documentation for xen-api
 
 Package: squeezed
 Architecture: any
-Depends: ${shlibs:Depends}
+Depends: ${shlibs:Depends}, xen-hypervisor
 Description: A daemon in charge of ballooning xen domains
  This daemon takes requests in the form of xenstore trees and balloons 
  domains up and down.
