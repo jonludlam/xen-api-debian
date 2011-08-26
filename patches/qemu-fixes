@@ -1,15 +1,15 @@
 --- a/ocaml/xenops/device.ml
 +++ b/ocaml/xenops/device.ml
-@@ -1481,7 +1481,7 @@
- 	   @ [ "-monitor"; "pty"; "-vnc"; "127.0.0.1:1" ]
+@@ -1482,7 +1482,7 @@
  		in
- 	(* Now add the close fds wrapper *)
--	let pid = Forkhelpers.safe_close_and_exec None None None [] ~syslog_stdout:true dmpath l in
-+	let pid = Forkhelpers.safe_close_and_exec ~env:[|"PYTHONPATH=/usr/lib/xen-4.1/lib/python"|] None None None [] ~syslog_stdout:true dmpath l in
+ 	(* Execute qemu-dm-wrapper, forwarding stdout to the syslog, with the key "qemu-dm-<domid>" *)
+ 	let syslog_stdout = Forkhelpers.Syslog_WithKey (Printf.sprintf "qemu-dm-%d" domid) in
+-	let pid = Forkhelpers.safe_close_and_exec None None None [] ~syslog_stdout dmpath l in
++	let pid = Forkhelpers.safe_close_and_exec ~env:[|"PYTHONPATH=/usr/lib/xen-4.1/lib/python"|] None None None [] ~syslog_stdout dmpath l in
  
-         debug "qemu-dm: should be running in the background (stdout and stderr redirected to syslog)";
+         debug "qemu-dm: should be running in the background (stdout redirected to syslog)";
  
-@@ -1490,9 +1490,9 @@
+@@ -1491,9 +1491,9 @@
  	   2. (in production) We know qemu is ready (and the domain may be unpaused) when
  	      device-misc/dm-ready is set in the store. See xs-xen.pq.hg:hvm-late-unpause *)
  
@@ -21,7 +21,7 @@
  	(* We can't block for both a xenstore key and a process disappearing so we
  	   block for 5s at a time *)
  	begin
-@@ -1500,8 +1500,10 @@
+@@ -1501,8 +1501,10 @@
  		let start = Unix.gettimeofday () in
  		while Unix.gettimeofday () -. start < timeout && not !finished do
  			try

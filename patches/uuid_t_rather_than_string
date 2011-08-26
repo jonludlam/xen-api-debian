@@ -20,7 +20,7 @@
  	let name = if info.name <> "" then info.name else sprintf "Domain-%d" domid in
  	try
  		let dom_path = xs.Xs.getdomainpath domid in
-@@ -384,7 +384,7 @@
+@@ -386,7 +386,7 @@
  	  (* CA-13801: to avoid confusing people, we shall change this domain's uuid *)
  	  let s = Printf.sprintf "deadbeef-dead-beef-dead-beef0000%04x" domid in
  	  warn "Domain stuck in dying state after 30s; resetting UUID to %s" s;

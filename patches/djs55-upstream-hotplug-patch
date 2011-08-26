@@ -16,7 +16,7 @@
  	  debug "vbd_unplug: setting currently_attached to false";
 --- a/ocaml/xenops/device.ml
 +++ b/ocaml/xenops/device.ml
-@@ -127,6 +127,74 @@
+@@ -132,6 +132,74 @@
      ignore_string(t.Xst.read backend_stub)
    with Xb.Noent -> raise Device_not_found
  
@@ -91,7 +91,7 @@
  (*
  (* Assume we've told the backend to close. Watch both the error node and one other path.
     When the watch fires, call a predicate function and look for an error node.
-@@ -301,59 +369,11 @@
+@@ -319,59 +387,11 @@
  
  let uses_blktap ~phystype = List.mem phystype [ Qcow; Vhd; Aio ]
  
@@ -116,12 +116,12 @@
 -(** Return the event to wait for when the shutdown has completed *)
 -let shutdown_done ~xs (x: device): string Watch.t = 
 -	Watch.value_to_appear (backend_shutdown_done_path_of_device ~xs x)
--
--let hard_shutdown_request ~xs (x: device) = request_shutdown ~xs x true
--let hard_shutdown_complete = shutdown_done
 +let hard_shutdown_request  = Generic.hard_shutdown_request
 +let hard_shutdown_complete = Generic.hard_shutdown_complete
  
+-let hard_shutdown_request ~xs (x: device) = request_shutdown ~xs x true
+-let hard_shutdown_complete = shutdown_done
+-
 -let clean_shutdown ~xs (x: device) =
 -	debug "Device.Vbd.clean_shutdown %s" (string_of_device x);
 -
@@ -155,7 +155,7 @@
  
  let release ~xs (x: device) =
  	debug "Device.Vbd.release %s" (string_of_device x);
-@@ -398,17 +418,13 @@
+@@ -416,17 +436,13 @@
  	   node is destroyed then we assume the domain is dead and is being reaped and return an error *)
  	match Watch.wait_for ~xs (Watch.any_of [ 
  				    `OK, Watch.value_to_appear response_path; (* pause-done *)
@@ -174,7 +174,7 @@
    
  let unpause ~xs (x: device) (token: string) = 
  	debug "Device.Vbd.unpause %s token=%s" (string_of_device x) token;
-@@ -444,19 +460,14 @@
+@@ -462,19 +478,14 @@
  	if fast_track_success
  	then raise Pause_token_mismatch
  	else begin
@@ -195,7 +195,7 @@
  	end
  
  let is_paused ~xs (x: device) = 
-@@ -525,11 +536,9 @@
+@@ -543,11 +554,9 @@
  
  
  	Generic.add_device ~xs device back front extra_private_keys;
@@ -208,7 +208,7 @@
  	   In the case of domain 0 we can do better: we have custom hotplug scripts
  	   which call us back when the device is actually available to userspace. We need
  	   to wait for this condition to make the template installers work.
-@@ -706,57 +715,11 @@
+@@ -724,57 +733,11 @@
  	  (match rate with | None -> [] | Some(rate, timeslice) -> [ "rate", Int64.to_string rate; "timeslice", Int64.to_string timeslice ]) in
  
  	Generic.add_device ~xs device back front extra_private_keys;
@@ -232,8 +232,7 @@
 -
 -let unplug_watch ~xs (x: device) = Watch.map (fun () -> "") (Watch.key_to_disappear (Hotplug.status_node x))
 -let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~xs x) 
-+let clean_shutdown = Generic.clean_shutdown
- 
+-
 -let clean_shutdown ~xs (x: device) =
 -	debug "Device.Vif.clean_shutdown %s" (string_of_device x);
 -
@@ -254,7 +253,8 @@
 -	let online_path = backend_path ^ "/online" in
 -	debug "xenstore-write %s = 0" online_path;
 -	xs.Xs.write online_path "0";
--
++let clean_shutdown = Generic.clean_shutdown
+ 
 -	debug "Device.Vif.hard_shutdown about to blow away frontend";
 -	let frontend_path = frontend_path_of_device ~xs x in
 -	Generic.safe_rm xs frontend_path;

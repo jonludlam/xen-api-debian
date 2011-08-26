@@ -1,6 +1,6 @@
 --- a/ocaml/xapi/xapi.ml
 +++ b/ocaml/xapi/xapi.ml
-@@ -549,9 +549,10 @@
+@@ -562,9 +562,10 @@
  (* Read the free memory on the host and record this in the db. This is used *)
  (* as the baseline for memory calculations in the message forwarding layer. *)
  let record_boot_time_host_free_memory () =
