@@ -22,3 +22,4 @@ dom0-memory-record
 fix-rewrite-management-interface
 pam
 dom0-setup-idempotent
+python-XenAPI-install-path
