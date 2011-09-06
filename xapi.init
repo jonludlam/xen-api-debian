@@ -49,6 +49,7 @@ do_start()
 	#   2 if daemon could not be started
 	modprobe xen-netback
 	modprobe xen-blkback
+	modprobe blktap
 	if [ ! -e /etc/xensource/network.conf ]; then
 		echo "bridge" > /etc/xensource/network.conf
 	fi
