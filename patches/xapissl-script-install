@@ -1,10 +1,7 @@
 --- a/scripts/OMakefile
 +++ b/scripts/OMakefile
-@@ -33,9 +33,10 @@
- 	$(IPROG) db.conf.skel $(DESTDIR)/etc/xensource/db.conf
- 	$(IPROG) rio.db.conf.skel $(DESTDIR)/etc/xensource/db.conf.rio
+@@ -35,7 +35,7 @@
  	mkdir -p $(DESTDIR)/etc/rc.d/init.d
-+	mkdir -p $(DESTDIR)/etc/init.d
  	$(IPROG) init.d-xenservices $(DESTDIR)/etc/rc.d/init.d/xenservices
  	$(IPROG) init.d-xapi $(DESTDIR)/etc/rc.d/init.d/xapi
 -	$(IPROG) init.d-xapissl $(DESTDIR)/etc/rc.d/init.d/xapissl

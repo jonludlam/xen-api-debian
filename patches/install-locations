@@ -40,7 +40,7 @@
  	$(IPROG) install-debian-pv.sh install-debian-pv-inside.sh $(BASE_PATH)/debug
 --- a/ocaml/idl/OMakefile
 +++ b/ocaml/idl/OMakefile
-@@ -157,7 +157,7 @@
+@@ -158,7 +158,7 @@
  	sed 's/@VERSION@/$(PRODUCT_VERSION)/g' < $< > $@
  
  if $(defined DESTDIR)
