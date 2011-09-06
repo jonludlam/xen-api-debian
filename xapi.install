@@ -72,3 +72,4 @@
 /etc/xapi.d
 /etc/xensource
 /lib
+/usr/bin/xe
