@@ -56,7 +56,7 @@ do_start()
 
 	mkdir -p /var/run/xend/boot
 	mkdir -p /usr/lib/xen-common/xapi/packages/iso
-
+	export OCAMLRUNPARAM=b
 	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --test > /dev/null \
 		|| return 1
 	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON -- \
