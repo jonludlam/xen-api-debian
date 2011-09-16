@@ -10,7 +10,7 @@ Homepage: <insert the upstream URL, if relevant>
 
 Package: xapi
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, squeezed, v6d, fe, blktap-utils, blktap-dkms, xen-sm, xen-hypervisor-4.1, stunnel, hwdata
+Depends: ${shlibs:Depends}, ${misc:Depends}, squeezed, v6d, fe, xen-sm, xen-hypervisor-4.1, stunnel, hwdata
 Recommends: vncterm
 Description: The Xen API server
  The Xen API server, which allows the control of the virtual machines hosted via
