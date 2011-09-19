@@ -1,0 +1,15 @@
+--- a/ocaml/xapi/stream_vdi.ml
++++ b/ocaml/xapi/stream_vdi.ml
+@@ -282,7 +282,11 @@
+ 	    stream_from suffix (Int64.add skipped_size (Int64.add offset length))	    
+ 	  end in
+ 	stream_from "-1" 0L;
+-	Unixext.fsync ofd) in
++	Unixext.fsync ofd;
++	debug "Settling udev";
++	ignore(Forkhelpers.execute_command_get_output "/sbin/udevadm" [ "settle" ]);
++	debug "Done"
++  ) in
+   begin try
+     for_each_vdi __context (recv_one ifd __context) prefix_vdis;
+   with Unix.Unix_error(Unix.EIO, _, _) ->
