@@ -1,6 +1,6 @@
 --- a/ocaml/xapi/vmops.ml
 +++ b/ocaml/xapi/vmops.ml
-@@ -296,7 +296,7 @@
+@@ -310,7 +310,7 @@
  let vcpu_configuration snapshot = 
    let vcpus = Int64.to_int snapshot.API.vM_VCPUs_max in
    let vcpus_current = Int64.to_int snapshot.API.vM_VCPUs_at_startup in

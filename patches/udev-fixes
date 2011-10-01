@@ -27,7 +27,7 @@
  IP="/sbin/ip"
  
  vsctl="/usr/bin/ovs-vsctl"
-@@ -184,7 +184,7 @@
+@@ -185,7 +185,7 @@
  if [[ $# -lt 2 ]]; then
      TYPE=vif
  else
@@ -36,22 +36,6 @@
  fi
  
  case $NETWORK_MODE in
-@@ -238,12 +238,13 @@
-         add_to_bridge
-         handle_promiscuous
- 
-+		logger -t script-vif "${dev}: writing ${HOTPLUG_STATUS}=connected"
-+		xenstore-write "${HOTPLUG_STATUS}" "connected"
-+
-         # only for the benefit of xenrt test case, see CA-61528
-         xenstore-write "${HOTPLUG}/vif" "${dev}"
-         xenstore-write "${HOTPLUG}/hotplug" "online"
- 
--		logger -t script-vif "${dev}: writing ${HOTPLUG_STATUS}=connected"
--		xenstore-write "${HOTPLUG_STATUS}" "connected"
-         call_hook_script $DOMID "${ACTION}"
-     fi
-     ;;
 --- a/scripts/block-frontend
 +++ b/scripts/block-frontend
 @@ -9,7 +9,7 @@

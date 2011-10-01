@@ -1,9 +1,0 @@
---- a/ocaml/xe-cli/rt/OMakefile
-+++ b/ocaml/xe-cli/rt/OMakefile
-@@ -30,5 +30,6 @@
- 	mkdir -p /tmp/cli-rt-domu/root
- 	cp gtmessages.ml gtcomms.ml gtlinuxops.ml gtserver_linux.ml /tmp/cli-rt-domu/root
- 	(cd $(ROOT)/scripts; /bin/sh ./make-patch /tmp/cli-rt-domu /tmp/cli-rt-domu-shar.sh)
-+	mkdir -p $(DESTDIR)/opt/xensource/debug
- 	mv /tmp/cli-rt-domu-shar.sh $(DESTDIR)/opt/xensource/debug
- 	install -m 755 install-debian-pv.sh install-debian-pv-inside.sh $(DESTDIR)/opt/xensource/debug

@@ -1,478 +1,109 @@
---- a/ocaml/xapi/xapi_vbd.ml
-+++ b/ocaml/xapi/xapi_vbd.ml
-@@ -57,12 +57,7 @@
- 	    raise (Api_errors.Server_error(Api_errors.operation_not_allowed, 
- 					   [ "Disk does not support surprise-remove" ]))
- 	  end;
--	  if Xapi_fist.simulate_vbd_unplug_failure () && not force then begin
--	    debug "Simulating failure of Device.Vbd.clean_shutdown";
--	    (* write the request into xenstore *)
--	    Device.Vbd.request_shutdown ~xs device force;
--	    raise (Device_common.Device_error(device, "fist"));
--	  end else (if force then Device.hard_shutdown else Device.clean_shutdown) ~xs device;
-+	  (if force then Device.hard_shutdown else Device.clean_shutdown) ~xs device;
- 
- 	  Device.Vbd.release ~xs device;
- 	  debug "vbd_unplug: setting currently_attached to false";
+From f4b652715e1fc7a75ed68702ddf7a29301fca6fa Mon Sep 17 00:00:00 2001
+From: David Scott <dave.scott@eu.citrix.com>
+Date: Fri, 30 Sep 2011 16:35:14 +0100
+Subject: [PATCH] Treat VIFs and VBD hotplug scripts differently: expect the
+ /xapi/... convention for VIFs but the upstream
+ hotplug-status=connected convention for VBDs
+
+This satisfies the following constraints:
+1. non-XCP blkback implementations (eg FreeBSD) use hotplug-status to signal completion (even if they don't use "hotplug" like linux does)
+2. netback implementations will delete the hotplug-status key when a driver disconnects temporarily, and therefore this doesn't signal "hot unplug complete"
+
+Hopefully after this commit xapi should work
+1. in XCP as normal
+2. in Kronos with a linux PVops dom0
+3. with driver domains
+
+Signed-off-by: David Scott <dave.scott@eu.citrix.com>
+---
+ ocaml/xenops/device.ml  |    4 +++-
+ ocaml/xenops/hotplug.ml |   31 +++++++++++++++++++++++--------
+ 2 files changed, 26 insertions(+), 9 deletions(-)
+
+diff --git a/ocaml/xenops/device.ml b/ocaml/xenops/device.ml
+index 64c87b1..ecaeb80 100644
 --- a/ocaml/xenops/device.ml
 +++ b/ocaml/xenops/device.ml
-@@ -132,6 +132,74 @@
-     ignore_string(t.Xst.read backend_stub)
-   with Xb.Noent -> raise Device_not_found
+@@ -147,7 +147,9 @@ let request_closure ~xs (x: device) =
+ 		)
+ 	)
  
-+(** When hot-unplugging a device we ask nicely *)
-+let request_closure ~xs (x: device) =
-+	let backend_path = backend_path_of_device ~xs x in
-+	let state_path = backend_path ^ "/state" in
-+	Xs.transaction xs (fun t ->
-+		let online_path = backend_path ^ "/online" in
-+		debug "xenstore-write %s = 0" online_path;
-+		t.Xst.write online_path "0";
-+		let state = try Xenbus.of_string (t.Xst.read state_path) with _ -> Xenbus.Closed in
-+		if state <> Xenbus.Closed then (
-+			debug "Device.del_device setting backend to Closing";
-+			t.Xst.write state_path (Xenbus.string_of Xenbus.Closing);
-+		)
-+	)
-+
-+let unplug_watch ~xs (x: device) = Watch.map (fun () -> "") (Watch.key_to_disappear (Hotplug.connected_node ~xs x))
-+let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~xs x)
-+let frontend_closed ~xs (x: device) = Watch.map (fun () -> "") (Watch.value_to_become (frontend_path_of_device ~xs x ^ "/state") (Xenbus.string_of Xenbus.Closed))
-+
-+let clean_shutdown ~xs (x: device) =
-+	debug "Device.Generic.clean_shutdown %s" (string_of_device x);
-+
-+	let on_error error =
-+	    debug "Device.Generic.shutdown_common: read an error: %s" error;
-+	    (* CA-14804: Delete the error node contents *)
-+	    safe_rm ~xs (error_path_of_device ~xs x);
-+	    raise (Device_error (x, error)) in
-+
-+	request_closure ~xs x;
-+	match Watch.wait_for ~xs (Watch.any_of [
-+		`Disconnected, frontend_closed ~xs x;
-+		`Unplugged, unplug_watch ~xs x; 
-+		`Failed, error_watch ~xs x;
-+	]) with
-+		| `Disconnected, _ ->
-+			debug "Device.Generic.clean_shutdown: frontend changed to state 6";
-+			safe_rm ~xs (frontend_path_of_device ~xs x);
-+			begin match Watch.wait_for ~xs (Watch.any_of [
-+				`Unplugged, unplug_watch ~xs x;
-+				`Failed, error_watch ~xs x;
-+			]) with
-+				| `Unplugged, _ -> rm_device_state ~xs x
-+				| `Failed, error -> on_error error
-+			end
-+		| `Unplugged, _ -> rm_device_state ~xs x
-+		| `Failed, error -> on_error error
-+
-+let hard_shutdown_request ~xs (x: device) =
-+	debug "Device.Generic.hard_shutdown_request %s" (string_of_device x);
-+
-+	let backend_path = backend_path_of_device ~xs x in
-+	let online_path = backend_path ^ "/online" in
-+	debug "xenstore-write %s = 0" online_path;
-+	xs.Xs.write online_path "0";
-+
-+	debug "Device.Generic.hard_shutdown about to blow away frontend";
-+	let frontend_path = frontend_path_of_device ~xs x in
-+	safe_rm xs frontend_path
-+
-+let hard_shutdown_complete ~xs (x: device) = unplug_watch ~xs x
-+
-+let hard_shutdown ~xs (x: device) = 
-+	hard_shutdown_request ~xs x;
-+	ignore(Watch.wait_for ~xs (hard_shutdown_complete ~xs x));
-+	(* blow away the backend and error paths *)
-+	debug "Device.Generic.hard_shutdown about to blow away backend and error paths";
-+	rm_device_state ~xs x
-+
- (*
- (* Assume we've told the backend to close. Watch both the error node and one other path.
-    When the watch fires, call a predicate function and look for an error node.
-@@ -319,59 +387,11 @@
- 
- let uses_blktap ~phystype = List.mem phystype [ Qcow; Vhd; Aio ]
- 
--(** Request either a clean or hard shutdown *)
--let request_shutdown ~xs (x: device) (force: bool) =
--	let request = if force then "force" else "normal" in
--
--	debug "Device.Vbd.request_shutdown %s %s" (string_of_device x) request;
--
--	let backend_path = backend_path_of_device ~xs x in
--	let request_path = backend_shutdown_request_path_of_device ~xs x in
--	let online_path = backend_path ^ "/online" in
--
--	(* Prevent spurious errors appearing by not writing online=0 if force *)
--	if not(force) then begin
--	  debug "xenstore-write %s = 0" online_path;
--	  xs.Xs.write online_path "0";
--	end;
--	debug "xenstore-write %s = %s" request_path request;
--	xs.Xs.write request_path request
--
--(** Return the event to wait for when the shutdown has completed *)
--let shutdown_done ~xs (x: device): string Watch.t = 
--	Watch.value_to_appear (backend_shutdown_done_path_of_device ~xs x)
-+let hard_shutdown_request  = Generic.hard_shutdown_request
-+let hard_shutdown_complete = Generic.hard_shutdown_complete
- 
--let hard_shutdown_request ~xs (x: device) = request_shutdown ~xs x true
--let hard_shutdown_complete = shutdown_done
--
--let clean_shutdown ~xs (x: device) =
--	debug "Device.Vbd.clean_shutdown %s" (string_of_device x);
--
--	request_shutdown ~xs x false; (* normal *)
--	(* Allow the domain to reject the request by writing to the error node *)
--	let shutdown_done = shutdown_done ~xs x in
--	let error = Watch.value_to_appear (error_path_of_device ~xs x) in
--	match Watch.wait_for ~xs (Watch.any_of [ `OK, shutdown_done; `Failed, error ]) with
--	| `OK, _ ->
--	    debug "Device.Vbd.shutdown_common: shutdown-done appeared";
--	    (* Delete the trees (otherwise attempting to plug the device in again doesn't
--	       work.) This also clears any stale error nodes. *)
--	    Generic.rm_device_state ~xs x
--	| `Failed, error ->
--	    (* CA-14804: Delete the error node contents *)
--	    Generic.safe_rm ~xs (error_path_of_device ~xs x);
--	    debug "Device.Vbd.shutdown_common: read an error: %s" error;
--	    raise (Device_error (x, error))
--
--let hard_shutdown ~xs (x: device) = 
--	debug "Device.Vbd.hard_shutdown %s" (string_of_device x);
--	request_shutdown ~xs x true; (* force *)
--
--	(* We don't watch for error nodes *)
--	ignore_string (Watch.wait_for ~xs (shutdown_done ~xs x));
--	Generic.rm_device_state ~xs x;
--
--	debug "Device.Vbd.hard_shutdown complete"
-+let clean_shutdown = Generic.clean_shutdown
-+let hard_shutdown = Generic.hard_shutdown
- 
- let release ~xs (x: device) =
- 	debug "Device.Vbd.release %s" (string_of_device x);
-@@ -416,17 +436,13 @@
- 	   node is destroyed then we assume the domain is dead and is being reaped and return an error *)
- 	match Watch.wait_for ~xs (Watch.any_of [ 
- 				    `OK, Watch.value_to_appear response_path; (* pause-done *)
--				    `Destroyed, Watch.map (fun () -> "") (Watch.key_to_disappear backend_path); (* backend has been deleted *) 
--				    `Shutdown, shutdown_done ~xs x; (* device has shutdown *) ]) with
-+				    `Destroyed, Watch.map (fun () -> "") (Watch.key_to_disappear backend_path); (* backend has been deleted *)  ]) with
- 	| `OK, _ ->
- 	    debug "Device.Vbd.pause %s complete" (string_of_device x);
- 	    token
- 	| `Destroyed, _ ->
- 	    debug "Device.Vbd.pause %s failed: backend has been deleted" (string_of_device x);
- 	    raise Device_shutdown
--	| `Shutdown, _ ->
--	    error "Device.Vbd.pause %s failed: backend has shutdown" (string_of_device x);
--	    raise Device_shutdown
-   
- let unpause ~xs (x: device) (token: string) = 
- 	debug "Device.Vbd.unpause %s token=%s" (string_of_device x) token;
-@@ -462,19 +478,14 @@
- 	if fast_track_success
- 	then raise Pause_token_mismatch
- 	else begin
--	  let shutdown_done = Watch.map (fun _ -> ()) (shutdown_done ~xs x) in
- 	  match Watch.wait_for ~xs (Watch.any_of [ 
- 				      `OK, Watch.key_to_disappear response_path; (* pause-done *)
--				      `Destroyed, Watch.key_to_disappear backend_path; (* backend has been deleted *)
--				      `Shutdown, shutdown_done; (* device has shutdown *) ]) with
-+				      `Destroyed, Watch.key_to_disappear backend_path; (* backend has been deleted *)]) with
- 	  | `OK, _ ->
- 	      debug "Device.Vbd.unpause %s complete" (string_of_device x)
- 	  | `Destroyed, _ ->
- 	      (* We consider this to be 'unpaused' *)
- 	      debug "Device.Vbd.unpause %s: backend has been deleted, considering it 'unpaused'" (string_of_device x)
--	  | `Shutdown, _ ->
--	      (* We consider this to be 'unpaused' *)
--	      debug "Device.Vbd.unpause %s: device has shut itself down, considering it 'unpaused'" (string_of_device x);
- 	end
- 
- let is_paused ~xs (x: device) = 
-@@ -543,11 +554,9 @@
- 
- 
- 	Generic.add_device ~xs device back front extra_private_keys;
--	Hotplug.wait_for_plug ~xs device;
-+
- 	(* 'Normally' we connect devices to other domains, and cannot know whether the
- 	   device is 'available' from their userspace (or even if they have a userspace).
--	   The best we can do is just to wait for the backend hotplug scripts to run,
--	   indicating that the backend has locked the resource.
- 	   In the case of domain 0 we can do better: we have custom hotplug scripts
- 	   which call us back when the device is actually available to userspace. We need
- 	   to wait for this condition to make the template installers work.
-@@ -724,57 +733,11 @@
- 	  (match rate with | None -> [] | Some(rate, timeslice) -> [ "rate", Int64.to_string rate; "timeslice", Int64.to_string timeslice ]) in
- 
- 	Generic.add_device ~xs device back front extra_private_keys;
--	Hotplug.wait_for_plug ~xs device;
- 	device
- 
--(** When hot-unplugging a device we ask nicely *)
--let request_closure ~xs (x: device) =
--	let backend_path = backend_path_of_device ~xs x in
--	let state_path = backend_path ^ "/state" in
--	Xs.transaction xs (fun t ->
--		let online_path = backend_path ^ "/online" in
--		debug "xenstore-write %s = 0" online_path;
--		t.Xst.write online_path "0";
--		let state = try Xenbus.of_string (t.Xst.read state_path) with _ -> Xenbus.Closed in
--		if state <> Xenbus.Closed then (
--			debug "Device.del_device setting backend to Closing";
--			t.Xst.write state_path (Xenbus.string_of Xenbus.Closing);
--		)
--	)
--
 -let unplug_watch ~xs (x: device) = Watch.map (fun () -> "") (Watch.key_to_disappear (Hotplug.status_node x))
--let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~xs x) 
--
--let clean_shutdown ~xs (x: device) =
--	debug "Device.Vif.clean_shutdown %s" (string_of_device x);
--
--	request_closure ~xs x;
--	match Watch.wait_for ~xs (Watch.any_of [ `OK, unplug_watch ~xs x; `Failed, error_watch ~xs x ]) with
--	| `OK, _ ->
--	    (* Delete the trees (otherwise attempting to plug the device in again doesn't
--	       work. This also clears any stale error nodes. *)
--	    Generic.rm_device_state ~xs x
--	| `Failed, error ->
--	    debug "Device.Vif.shutdown_common: read an error: %s" error;
--	    raise (Device_error (x, error))	
--
--let hard_shutdown ~xs (x: device) =
--	debug "Device.Vif.hard_shutdown %s" (string_of_device x);
--
--	let backend_path = backend_path_of_device ~xs x in
--	let online_path = backend_path ^ "/online" in
--	debug "xenstore-write %s = 0" online_path;
--	xs.Xs.write online_path "0";
-+let clean_shutdown = Generic.clean_shutdown
++let unplug_watch ~xs (x: device) =
++	let path = Hotplug.path_written_by_hotplug_scripts x in
++	Watch.map (fun () -> "") (Watch.key_to_disappear path)
+ let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~xs x)
+ let frontend_closed ~xs (x: device) = Watch.map (fun () -> "") (Watch.value_to_become (frontend_path_of_device ~xs x ^ "/state") (Xenbus.string_of Xenbus.Closed))
  
--	debug "Device.Vif.hard_shutdown about to blow away frontend";
--	let frontend_path = frontend_path_of_device ~xs x in
--	Generic.safe_rm xs frontend_path;
--	
--	ignore_string (Watch.wait_for ~xs (unplug_watch ~xs x));
--
--	(* blow away the backend and error paths *)
--	debug "Device.Vif.hard_shutdown about to blow away backend and error paths";
--	Generic.rm_device_state ~xs x
-+let hard_shutdown = Generic.hard_shutdown
- 
- let set_carrier ~xs (x: device) carrier = 
- 	debug "Device.Vif.set_carrier %s <- %b" (string_of_device x) carrier;
---- a/ocaml/xenops/device.mli
-+++ b/ocaml/xenops/device.mli
-@@ -77,8 +77,6 @@
- 	val hard_shutdown_request : xs:Xs.xsh -> device -> unit
- 	val hard_shutdown_complete : xs:Xs.xsh -> device -> string Watch.t
- 
--	(* For testing: *)
--	val request_shutdown : xs:Xs.xsh -> device -> bool -> unit
- end
- 
- module Vif :
---- a/ocaml/xenops/device_common.mli
-+++ b/ocaml/xenops/device_common.mli
-@@ -61,6 +61,12 @@
-     directory.*)
- val list_frontends : xs:Xs.xsh -> Xc.domid -> device list
- 
-+(** [list_backends xs domid] returns a list of devices where there is a
-+	backend in [domid]. *)
-+val list_backends : xs:Xs.xsh -> Xc.domid -> device list
-+(** [list_frontends xs domid] returns a list of devices where there is a
-+	frontend in [domid]. *)
-+val list_frontends : xs:Xs.xsh -> Xc.domid -> device list
- (** Return a list of devices connecting two domains. Ignore those whose kind 
-     we don't recognise *)
- val list_devices_between : xs:Xs.xsh -> Xc.domid -> Xc.domid -> device list
---- a/ocaml/xenops/domain.ml
-+++ b/ocaml/xenops/domain.ml
-@@ -284,7 +284,10 @@
- let destroy ?(preserve_xs_vm=false) ~xc ~xs domid =
- 	let dom_path = xs.Xs.getdomainpath domid in
- 
--	let all_devices = list_devices_between ~xs 0 domid in
-+	(* These are the devices with a frontend in [domid] and a well-formed backend
-+	   in some other domain *)
-+	let all_devices = list_frontends ~xs domid in
-+	
- 	debug "Domain.destroy: all known devices = [ %a ]" (fun () -> String.concat "; ")
-           (List.map string_of_device all_devices);
- 
+diff --git a/ocaml/xenops/hotplug.ml b/ocaml/xenops/hotplug.ml
+index 816854c..3725580 100644
 --- a/ocaml/xenops/hotplug.ml
 +++ b/ocaml/xenops/hotplug.ml
-@@ -61,9 +61,6 @@
+@@ -61,8 +61,22 @@ let get_private_data_path_of_device (x: device) =
  let get_hotplug_path (x: device) =
  	sprintf "%s/hotplug/%s/%d" (get_private_path x.frontend.domid) (string_of_kind x.backend.kind) x.backend.devid
  
 -(* The path in xenstore written to by the hotplug scripts *)
 -let status_node (x: device) = get_hotplug_path x ^ "/hotplug"
--
++let path_written_by_hotplug_scripts (x: device) = match x.backend.kind with
++	| Vif -> get_hotplug_path x ^ "/hotplug"
++	| Vbd ->
++		sprintf "/local/domain/%d/backend/%s/%d/%d/hotplug-status"
++			x.backend.domid (string_of_kind x.backend.kind) x.frontend.domid x.frontend.devid
++	| k -> failwith (Printf.sprintf "No xenstore interface for this kind of device: %s" (string_of_kind k))
++
++let value_written_by_hotplug_scripts (x: device) = match x.backend.kind with
++	| Vif -> "online"
++	| Vbd -> "connected"
++	| k -> failwith (Printf.sprintf "No xenstore interface for this kind of device: %s" (string_of_kind k))
++
++let hotplugged ~xs (x: device) =
++	let path = path_written_by_hotplug_scripts x
++	and v = value_written_by_hotplug_scripts x in
++	try xs.Xs.read path = v with Xb.Noent -> false
+ 
  (* The path in xenstore written to by the frontend hotplug scripts *)
  let frontend_status_node (x: device) = 
- 	sprintf "%s/frontend/%s/%d/hotplug" (get_private_path x.frontend.domid) (string_of_kind x.frontend.kind) x.frontend.devid
-@@ -92,7 +89,7 @@
+@@ -86,24 +100,24 @@ let blkback_error_node ~xs (x: device) =
     (ie not an API-initiated hotunplug; this is start of day) then we check the state 
     of the backend hotplug scripts. *)
  let device_is_online ~xs (x: device) = 
 -  let backend_hotplug () = try xs.Xs.read (status_node x) = "online" with Xb.Noent -> false
-+  let backend_hotplug () = try xs.Xs.read (connected_node ~xs x) = "connected" with Xb.Noent -> false
-   and backend_shutdown () = try ignore(xs.Xs.read (backend_shutdown_done_path_of_device ~xs x)); true with Xb.Noent -> false 
+-  and backend_shutdown () = try ignore(xs.Xs.read (backend_shutdown_done_path_of_device ~xs x)); true with Xb.Noent -> false 
++  let backend_shutdown () = try ignore(xs.Xs.read (backend_shutdown_done_path_of_device ~xs x)); true with Xb.Noent -> false 
    and backend_request () = try ignore(xs.Xs.read (backend_shutdown_request_path_of_device ~xs x)); true with Xb.Noent -> false in
  
-@@ -104,7 +101,7 @@
+   match x.backend.kind with
+   | Pci | Vkbd | Vfb  -> assert false (* PCI backend doesn't create online node *)
+-  | Vif -> backend_hotplug ()
++  | Vif -> hotplugged ~xs x
+   | ( Vbd | Tap ) -> 
+       if backend_request () 
        then not(backend_shutdown ())
-       else backend_hotplug ()
+-      else backend_hotplug ()
++      else hotplugged ~xs x
  
--(* Poll a device (vif) to see whether it has hotplug-status = connected *)
-+(* Poll a device to see whether it has hotplug-status = connected *)
- let device_is_connected ~xs (x: device) =
- 	try
- 		let path = connected_node ~xs x in
-@@ -116,7 +113,7 @@
+ let wait_for_plug ~xs (x: device) = 
+   debug "Hotplug.wait_for_plug: %s" (string_of_device x);
    try
      Stats.time_this "udev backend add event" 
        (fun () ->
 -    ignore(Watch.wait_for ~xs ~timeout:hotplug_timeout (Watch.value_to_appear (status_node x)));
-+    ignore(Watch.wait_for ~xs ~timeout:hotplug_timeout (Watch.value_to_appear (connected_node ~xs x)));
++		  let path = path_written_by_hotplug_scripts x in
++		  ignore(Watch.wait_for ~xs ~timeout:hotplug_timeout (Watch.value_to_appear path));
        );
      debug "Synchronised ok with hotplug script: %s" (string_of_device x)
    with Watch.Timeout _ ->
-@@ -127,7 +124,7 @@
+@@ -114,7 +128,8 @@ let wait_for_unplug ~xs (x: device) =
    try
      Stats.time_this "udev backend remove event" 
        (fun () ->
 -    ignore(Watch.wait_for ~xs ~timeout:hotplug_timeout (Watch.key_to_disappear (status_node x)));
-+    ignore(Watch.wait_for ~xs ~timeout:hotplug_timeout (Watch.key_to_disappear (connected_node ~xs x)));
++		  let path = path_written_by_hotplug_scripts x in
++		  ignore(Watch.wait_for ~xs ~timeout:hotplug_timeout (Watch.key_to_disappear path));
        );
      debug "Synchronised ok with hotplug script: %s" (string_of_device x)
    with Watch.Timeout _ ->
---- a/scripts/block
-+++ /dev/null
-@@ -1,83 +0,0 @@
--#!/bin/sh
--
--TYPE=`echo ${XENBUS_PATH} | cut -f 2 -d '/'`
--DOMID=`echo ${XENBUS_PATH} | cut -f 3 -d '/'`
--DEVID=`echo ${XENBUS_PATH} | cut -f 4 -d '/'`
--
--DEVNAME=$TYPE-$DOMID-$DEVID
--
--SYSFS_PATH=/sys/devices/xen-backend/$DEVNAME
--
--XAPI=/xapi/${DOMID}/hotplug/${TYPE}/${DEVID}
--
--HOTPLUG="${XAPI}/hotplug"
--
--KTHREAD_PID="${XENBUS_PATH}/kthread-pid"
--
--PAUSE="${XENBUS_PATH}/pause"
--PAUSE_DONE="${XENBUS_PATH}/pause-done"
--
--SHUTDOWN="${XENBUS_PATH}/shutdown-request"
--SHUTDOWN_DONE="${XENBUS_PATH}/shutdown-done"
--
--syslog ()
--{
--	logger -pdaemon.info -tscripts-block -- "$DEVNAME[$ACTION]: $*"
--}
--
--case "$ACTION" in
--add)
--	syslog "writing $HOTPLUG = online"
--	xenstore write "$HOTPLUG" "online"
--
--	# RUNNING          (1<<0)
--	# PAUSE_DONE       (1<<1)
--	# SHUTDOWN_DONE    (1<<2)
--	# PAUSE_REQUEST    (1<<3)
--	# SHUTDOWN_REQUEST (1<<4)
--
--	# echo $(((1<<1) | (1<<3))) > $SYSFS_PATH/queue_events # unpaused|paused
--	;;
--
--change)
--	if pid=$(xenstore read "$KTHREAD_PID" 2>/dev/null)
--	then
--		state=running
--	else
--		state=stopped
--	fi
--
--	syslog "kthread-pid = '$pid'"
--
--	case "$state" in
--		stopped)
--			if xenstore exists "$PAUSE"
--			then
--				syslog "writing $PAUSE_DONE"
--				xenstore write "$PAUSE_DONE" ""
--			fi
--			if xenstore exists "$SHUTDOWN"
--			then
--				syslog "writing $SHUTDOWN_DONE"
--				xenstore write "$SHUTDOWN_DONE" ""
--			fi
--			;;
--		running)
--			if xenstore exists "$PAUSE_DONE"
--			then
--				syslog "removing $PAUSE_DONE"
--				xenstore rm "$PAUSE_DONE"
--			fi
--			if xenstore exists "$SHUTDOWN_DONE"
--			then
--				syslog "WARNING: queue restart in shutdown state."
--			fi
--			;;
--	esac
--	;;
--
--remove)
--	syslog "removing $HOTPLUG"
--	xenstore rm "$HOTPLUG"
--	;;
--esac
---- a/scripts/vif
-+++ b/scripts/vif
-@@ -221,6 +221,7 @@
- XAPI=/xapi/${DOMID}/hotplug/vif/${DEVID}
- HOTPLUG=/xapi/${DOMID}/hotplug/vif/${DEVID}
- PRIVATE=/xapi/${DOMID}/private/vif/${DEVID}
-+HOTPLUG_STATUS="${XENBUS_PATH}/hotplug-status"
- 
- logger -t scripts-vif "Called as \"$@\" domid:$DOMID devid:$DEVID mode:$NETWORK_MODE"
- case "${ACTION}" in
-@@ -237,11 +238,12 @@
-         add_to_bridge
-         handle_promiscuous
- 
-+        # only for the benefit of xenrt test case, see CA-61528
-         xenstore-write "${HOTPLUG}/vif" "${dev}"
-         xenstore-write "${HOTPLUG}/hotplug" "online"
- 
--        # xs-xen.pq.hq:91e986b8e49f netback-wait-for-hotplug
--        xenstore-write "/local/domain/0/backend/vif/${DOMID}/${DEVID}/hotplug-status" "connected"
-+		logger -t script-vif "${dev}: writing ${HOTPLUG_STATUS}=connected"
-+		xenstore-write "${HOTPLUG_STATUS}" "connected"
-         call_hook_script $DOMID "${ACTION}"
-     fi
-     ;;
-@@ -255,6 +257,8 @@
- remove)
-     if [ "${TYPE}" = "vif" ] ;then
-         xenstore-rm "${HOTPLUG}/hotplug"
-+		logger -t script-vif "${dev}: removing ${HOTPLUG_STATUS}"
-+		xenstore-rm "${HOTPLUG_STATUS}"
-         call_hook_script $DOMID "${ACTION}"
-     fi
-     logger -t scripts-vif "${dev} has been removed"
+-- 
+1.7.5.4
+
