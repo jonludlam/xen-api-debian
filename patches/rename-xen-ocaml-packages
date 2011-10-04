@@ -1,0 +1,74 @@
+diff --git a/ocaml/xapi/OMakefile b/ocaml/xapi/OMakefile
+index 06335b5..5caaf4b 100644
+--- a/ocaml/xapi/OMakefile
++++ b/ocaml/xapi/OMakefile
+@@ -1,4 +1,4 @@
+-OCAMLPACKS    = xml-light2 cdrom pciutil sexpr log stunnel http-svr rss xen-utils netdev tapctl vhd xs rpc-light
++OCAMLPACKS    = xml-light2 cdrom pciutil sexpr log stunnel http-svr rss xen-utils netdev tapctl vhd xenstore rpc-light
+ OCAML_LIBS    = ../util/version ../util/vm_memory_constraints ../util/sanitycheck ../util/stats \
+ 	../idl/ocaml_backend/common ../idl/ocaml_backend/client ../idl/ocaml_backend/server ../util/ocamltest
+ OCAMLINCLUDES = ../idl ../idl/ocaml_backend \
+@@ -17,7 +17,7 @@ CFLAGS += -std=gnu99 -Wall -Werror -I$(shell ocamlc -where)
+ # (the same holds for OCaml packages)
+ XEN_OCAML_LIBS = ../xenops/xenops ../auth/pam
+ XEN_OCAMLINCLUDES =
+-XEN_OCAMLPACKS = xc xs cpuid
++XEN_OCAMLPACKS = xenctrl xenstore cpuid
+ OCAML_CLIBS = $(XEN_OCAML_CLIBS) $(OCAML_CLIBS)
+ OCAML_LINK_FLAGS = $(XEN_OCAML_LINK_FLAGS) $(OCAML_LINK_FLAGS)
+ CFLAGS = $(XEN_CFLAGS) $(CFLAGS)
+diff --git a/ocaml/xe-cli/OMakefile b/ocaml/xe-cli/OMakefile
+index 692a793..41417a6 100644
+--- a/ocaml/xe-cli/OMakefile
++++ b/ocaml/xe-cli/OMakefile
+@@ -11,7 +11,7 @@ section
+ 
+ section
+ 
+-	OCAMLPACKS += xb xs netdev
++	OCAMLPACKS += xenbus xenstore netdev
+ 	OCAML_CLIBS = ../xenops/statdev_stubs 
+ 
+ 	OCamlProgram(fatxe, cli options \
+diff --git a/ocaml/xenops/OMakefile b/ocaml/xenops/OMakefile
+index dff1b35..6eb4ab3 100644
+--- a/ocaml/xenops/OMakefile
++++ b/ocaml/xenops/OMakefile
+@@ -4,7 +4,7 @@ OCAML_CLIBS     += $(XEN_OCAML_CLIBS)
+ OCAML_LINK_FLAGS+= $(XEN_OCAML_LINK_FLAGS)
+ CFLAGS          += $(XEN_CFLAGS)
+ 
+-OCAMLPACKS     = threads xc xs stdext log cdrom netdev
++OCAMLPACKS     = threads xenctrl xenstore stdext log cdrom netdev
+ OCAMLFLAGS    += -thread
+ 
+ LIBFILES = table xenops_helpers xenbus balloon xenguestHelper domain hotplug device io statdev xal netman memory watch device_common squeeze squeeze_xen squeezed_rpc squeezed_state squeezed_rpc device_number
+@@ -46,7 +46,7 @@ OCamlProgram(dbgring, dbgring)
+ section
+ 	OCAMLINCLUDES   = ../idl/ocaml_backend ../idl
+ 	OCAMLFLAGS = -dtypes -warn-error F -cclib -static
+-	OCAMLPACKS = xc xs
++	OCAMLPACKS = xenctrl xenstore
+ 	OCamlProgram(xs, xenstore_readdir)
+ 
+ OCamlProgram(xal, xal_main)
+diff --git a/ocaml/xiu/OMakefile b/ocaml/xiu/OMakefile
+index e33fcc9..dd2a183 100644
+--- a/ocaml/xiu/OMakefile
++++ b/ocaml/xiu/OMakefile
+@@ -1,4 +1,4 @@
+-OCAMLPACKS    = stdext xs netdev log
++OCAMLPACKS    = stdext xenstore netdev log
+ OCAML_LIBS    += ../util/version ../idl/ocaml_backend/common ../xenops/xenops
+ OCAMLINCLUDES += ../xapi ../xenops
+ 
+diff --git a/ocaml/xstest/OMakefile b/ocaml/xstest/OMakefile
+index d9f023a..deb84b7 100644
+--- a/ocaml/xstest/OMakefile
++++ b/ocaml/xstest/OMakefile
+@@ -1,4 +1,4 @@
+-OCAMLPACKS    += threads xc xs
++OCAMLPACKS    += threads xenctrl xenstore
+ OCAMLFLAGS    += -thread
+ 
+ OCamlProgram(xstest, xstest common)

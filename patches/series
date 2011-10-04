@@ -1,3 +1,4 @@
+rename-xen-ocaml-packages
 djs55-upstream-hotplug-patch
 dont-build-xiu
 expose-xmlrpc-nil-marshaller
