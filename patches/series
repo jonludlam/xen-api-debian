@@ -1,7 +1,5 @@
 rename-xen-ocaml-packages
-djs55-upstream-hotplug-patch
 dont-build-xiu
-expose-xmlrpc-nil-marshaller
 no-runstate-info
 no-max_nr_vcpus
 fix-xenguest
