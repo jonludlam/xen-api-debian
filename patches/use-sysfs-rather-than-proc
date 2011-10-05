@@ -1,6 +1,6 @@
 --- a/ocaml/xenops/balloon.ml
 +++ b/ocaml/xenops/balloon.ml
-@@ -17,46 +17,34 @@
+@@ -18,46 +18,34 @@
  module D = Debug.Debugger(struct let name = "xenops" end)
  open D
  
@@ -18,7 +18,7 @@
 +let _high_mem_balloon = "info/high_kb"
  
  (** Indicates whether or not we're running with XIU (Xen-In Userspace) *)
- let on_xiu () = Xc.is_fake ()
+ let on_xiu () = Xenctrl.is_fake ()
  
  (** Reads /proc/xen/balloon into a string * int64 option association list *)
  let parse_proc_xen_balloon () =
@@ -67,7 +67,7 @@
  
  (** Sets the current memory target for a running VM, to the given value (in KiB), *)
  (** by writing the target to XenStore. The value is automatically rounded down to *)
-@@ -68,3 +56,4 @@
+@@ -69,3 +57,4 @@
  	(* Debugging information: *)
  	let mem_mib = Memory.mib_of_kib_used mem_kib in
  	debug "domain %d set memory target to %Ld MiB" domid mem_mib;
