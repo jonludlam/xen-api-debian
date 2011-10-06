@@ -22,3 +22,4 @@ pam
 dom0-setup-idempotent
 python-XenAPI-install-path
 xapissl-script-install
+vif-hot-unplug
