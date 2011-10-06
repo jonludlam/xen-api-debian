@@ -2760,7 +2760,7 @@
  
 --- a/ocaml/xapi/pciops.ml
 +++ b/ocaml/xapi/pciops.ml
-@@ -72,7 +72,7 @@
+@@ -71,7 +71,7 @@
  	if List.length pcidevs > 0 then begin
  		(* XXX: PCI passthrough needs a lot of work *)
  		Vmopshelpers.with_xc_and_xs (fun xc xs ->
@@ -2769,7 +2769,7 @@
  				Device.PCI.bind pcidevs;
  				List.iter (fun ((a, b, c, d) as device) ->
  					debug "hotplugging PCI device %04x:%02x:%02x.%01x into domid: %d" a b c d domid;
-@@ -101,7 +101,7 @@
+@@ -100,7 +100,7 @@
  let unplug_pcidevs_noexn ~__context ~vm domid pcidevs =
  	Helpers.log_exn_continue "unplug_pcidevs" (fun () ->
  		Vmopshelpers.with_xc_and_xs (fun xc xs ->
@@ -2778,7 +2778,7 @@
  				List.iter (fun (devid, devices) ->
  					List.iter (fun device ->
  						debug "requesting hotunplug of PCI device %s" (Device.PCI.to_string device);
-@@ -115,7 +115,7 @@
+@@ -114,7 +114,7 @@
  let currently_attached_pcis ~__context domid =
  	let host = Helpers.get_localhost ~__context in
  	Vmopshelpers.with_xc_and_xs (fun xc xs ->
@@ -3105,7 +3105,15 @@
  		  raise (Api_errors.Server_error(Api_errors.vm_bad_power_state, [Ref.string_of vm; "running"; (Record_util.power_to_string `Halted)]))
 --- a/ocaml/xenops/dbgring.ml
 +++ b/ocaml/xenops/dbgring.ml
-@@ -22,10 +22,10 @@
+@@ -16,16 +16,16 @@
+ 
+ let open_ring0 () =
+ 	let fd = Unix.openfile xenstored_proc_kva [ Unix.O_RDWR ] 0o600 in
+-	let sz = Mmap.getpagesize () in
+-	let intf = Mmap.mmap fd Mmap.RDWR Mmap.SHARED sz 0 in
++	let sz = Xenmmap.getpagesize () in
++	let intf = Xenmmap.mmap fd Xenmmap.RDWR Xenmmap.SHARED sz 0 in
+ 	Unix.close fd;
  	intf
  
  let open_ringU domid mfn =
@@ -3114,11 +3122,23 @@
  	Pervasiveext.finally
 -		(fun () -> Xc.map_foreign_range xc domid (Mmap.getpagesize()) mfn)
 -		(fun () -> Xc.interface_close xc)
-+		(fun () -> Xenctrl.map_foreign_range xc domid (Mmap.getpagesize()) mfn)
++		(fun () -> Xenctrl.map_foreign_range xc domid (Xenmmap.getpagesize()) mfn)
 +		(fun () -> Xenctrl.interface_close xc)
  
  let open_ring domid mfn =
  	if domid = 0
+@@ -72,9 +72,9 @@
+ 		try int_of_string Sys.argv.(1), Nativeint.of_string Sys.argv.(2)
+ 		with _ -> 0, Nativeint.zero
+ 	in
+-	let sz = Mmap.getpagesize () - 1024 - 512 in
++	let sz = Xenmmap.getpagesize () - 1024 - 512 in
+ 	let intf = open_ring domid mfn in
+-	let s = Mmap.read intf 0 sz in
++	let s = Xenmmap.read intf 0 sz in
+ 	let ss = (hexify s) in
+ 
+ 	let req_cons = int_from_page ss (4*ring_size) in
 --- a/ocaml/xenops/fence.ml
 +++ b/ocaml/xenops/fence.ml
 @@ -20,11 +20,11 @@
@@ -3211,6 +3231,15 @@
  	if !minimal
 --- a/ocaml/xenops/memory.ml
 +++ b/ocaml/xenops/memory.ml
+@@ -27,7 +27,7 @@
+ 
+ let bytes_per_kib  = 1024L
+ let bytes_per_mib  = 1048576L
+-let bytes_per_page = Int64.of_int (Mmap.getpagesize ())
++let bytes_per_page = Int64.of_int (Xenmmap.getpagesize ())
+ let kib_per_page   = bytes_per_page /// bytes_per_kib
+ let kib_per_mib    = 1024L
+ let pages_per_mib  = bytes_per_mib /// bytes_per_page
 @@ -90,13 +90,13 @@
  (* === Host memory properties =============================================== *)
  
