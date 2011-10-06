@@ -3469,3 +3469,23 @@
  
  let _ = 
  
+--- a/ocaml/xenops/balloon.mli
++++ b/ocaml/xenops/balloon.mli
+@@ -12,7 +12,7 @@
+  * GNU Lesser General Public License for more details.
+  *)
+ val parse_proc_xen_balloon : unit -> (string * int64 option) list
+-val set_memory_target : xs:Xs.xsh -> Xs.domid -> int64 -> unit
++val set_memory_target : xs:Xenstore.Xs.xsh -> Xenstore.Xs.domid -> int64 -> unit
+ val _current_allocation : string
+ val _requested_target : string
+ val _low_mem_balloon : string
+--- a/ocaml/xenops/watch.mli
++++ b/ocaml/xenops/watch.mli
+@@ -42,5 +42,5 @@
+ exception Timeout of float
+ 
+ (** Wait for a result *)
+-val wait_for : xs:Xs.xsh -> ?timeout:float -> 'a t -> 'a
++val wait_for : xs:Xenstore.Xs.xsh -> ?timeout:float -> 'a t -> 'a
+ 
