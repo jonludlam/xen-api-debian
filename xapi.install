@@ -1,4 +1,4 @@
-/usr/lib/python2.6
+/usr/lib/python2.7
 /usr/lib/xen-common/xapi/bin/fix_firewall.sh
 /usr/lib/xen-common/xapi/bin/list_domains
 /usr/lib/xen-common/xapi/bin/mpathalert

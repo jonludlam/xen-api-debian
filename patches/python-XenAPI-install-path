@@ -1,5 +1,14 @@
 --- a/scripts/examples/python/OMakefile
 +++ b/scripts/examples/python/OMakefile
+@@ -11,7 +11,7 @@
+ PYTHON_LIB=XenAPI.py provision.py
+ PYTHON_SRC=$(PYTHON_EXE) $(PYTHON_LIB)
+ PYTHON_HTML=$(addsuffix .html, $(PYTHON_SRC))
+-PYTHON_DIR=python2.6
++PYTHON_DIR=python2.7
+ 
+ .PHONY: html-versions
+ # note that enscript is not in the build chroot, so this target will fail.
 @@ -38,9 +38,9 @@
  .PHONY: install
  install:
