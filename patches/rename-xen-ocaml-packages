@@ -28,7 +28,7 @@
  	OCamlProgram(fatxe, cli options \
 --- a/ocaml/xenops/OMakefile
 +++ b/ocaml/xenops/OMakefile
-@@ -4,7 +4,7 @@
+@@ -4,10 +4,10 @@
  OCAML_LINK_FLAGS+= $(XEN_OCAML_LINK_FLAGS)
  CFLAGS          += $(XEN_CFLAGS)
  
@@ -36,7 +36,11 @@
 +OCAMLPACKS     = threads xenctrl xenstore stdext log cdrom netdev
  OCAMLFLAGS    += -thread
  
- LIBFILES = table xenops_helpers xenbus balloon xenguestHelper domain hotplug device io statdev xal netman memory watch device_common squeeze squeeze_xen squeezed_rpc squeezed_state squeezed_rpc device_number stubdom
+-LIBFILES = table xenops_helpers xenbus balloon xenguestHelper domain hotplug device io statdev xal netman memory watch device_common squeeze squeeze_xen squeezed_rpc squeezed_state squeezed_rpc device_number stubdom
++LIBFILES = table xenops_helpers xenbus_utils balloon xenguestHelper domain hotplug device io statdev xal netman memory watch device_common squeeze squeeze_xen squeezed_rpc squeezed_state squeezed_rpc device_number stubdom
+ 
+ StaticCLibrary(statdev_stubs, statdev_stubs)
+ OCamlLibraryClib(xenops, $(LIBFILES), statdev_stubs)
 @@ -46,7 +46,7 @@
  section
  	OCAMLINCLUDES   = ../idl/ocaml_backend ../idl
@@ -2635,9 +2639,10 @@
  val attach_pcis :
    __context:'a ->
 -  xc:Xc.handle ->
-+  xc:Xenctrl.handle ->
-   xs:Xs.xsh ->
+-  xs:Xs.xsh ->
 -  hvm:bool -> Xc.domid -> (int * (int * int * int * int)) list -> unit
++  xc:Xenctrl.handle ->
++  xs:Xenstore.Xs.xsh ->
 +  hvm:bool -> Xenctrl.domid -> (int * (int * int * int * int)) list -> unit
  
  (** Hotplug the PCI devices into the domain (as opposed to 'attach_pcis') *)
