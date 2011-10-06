@@ -143,9 +143,14 @@
  
  exception Ioemu_failed of string
  exception Ioemu_failed_dying
-@@ -65,7 +66,7 @@
- 			if Xenbus.of_string (t.Xst.read (frontend_path ^ "/state"))
- 			   <> Xenbus.Closed then
+@@ -62,10 +63,10 @@
+ 	Xs.transaction xs (fun t ->
+ 		begin try
+ 			ignore (t.Xst.read frontend_path);
+-			if Xenbus.of_string (t.Xst.read (frontend_path ^ "/state"))
+-			   <> Xenbus.Closed then
++			if Xenbus_utils.of_string (t.Xst.read (frontend_path ^ "/state"))
++			   <> Xenbus_utils.Closed then
  				raise (Device_frontend_already_connected device)
 -		with Xb.Noent -> () end;
 +		with Xenbus.Xb.Noent -> () end;
@@ -168,6 +173,29 @@
  
  (** When hot-unplugging a device we ask nicely *)
  let request_closure ~xs (x: device) =
+@@ -140,10 +141,10 @@
+ 		let online_path = backend_path ^ "/online" in
+ 		debug "xenstore-write %s = 0" online_path;
+ 		t.Xst.write online_path "0";
+-		let state = try Xenbus.of_string (t.Xst.read state_path) with _ -> Xenbus.Closed in
+-		if state <> Xenbus.Closed then (
++		let state = try Xenbus_utils.of_string (t.Xst.read state_path) with _ -> Xenbus_utils.Closed in
++		if state <> Xenbus_utils.Closed then (
+ 			debug "Device.del_device setting backend to Closing";
+-			t.Xst.write state_path (Xenbus.string_of Xenbus.Closing);
++			t.Xst.write state_path (Xenbus_utils.string_of Xenbus_utils.Closing);
+ 		)
+ 	)
+ 
+@@ -151,7 +152,7 @@
+ 	let path = Hotplug.path_written_by_hotplug_scripts x in
+ 	Watch.map (fun () -> "") (Watch.key_to_disappear path)
+ let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~xs x)
+-let frontend_closed ~xs (x: device) = Watch.map (fun () -> "") (Watch.value_to_become (frontend_path_of_device ~xs x ^ "/state") (Xenbus.string_of Xenbus.Closed))
++let frontend_closed ~xs (x: device) = Watch.map (fun () -> "") (Watch.value_to_become (frontend_path_of_device ~xs x ^ "/state") (Xenbus_utils.string_of Xenbus_utils.Closed))
+ 
+ let clean_shutdown ~xs (x: device) =
+ 	debug "Device.Generic.clean_shutdown %s" (string_of_device x);
 @@ -215,7 +216,7 @@
  	let finished = ref false and error = ref None in
  	let callback watch =
@@ -204,6 +232,42 @@
  
  (* Add the VBD to the domain, When this command returns, the device is ready. (This isn't as
     concurrent as xend-- xend allocates loopdevices via hotplug in parallel and then
+@@ -604,7 +605,7 @@
+ 
+ 	Hashtbl.add_list front_tbl [
+ 		"backend-id", string_of_int backend_domid;
+-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
++		"state", string_of_int (Xenbus_utils.int_of Xenbus_utils.Initialising);
+ 		"virtual-device", string_of_int devid;
+ 		"device-type", if dev_type = CDROM then "cdrom" else "disk";
+ 	];
+@@ -614,7 +615,7 @@
+ 		   This allows the xenbus connection to re-establish itself *)
+ 		"online", "1";
+ 		"removable", if unpluggable then "1" else "0";
+-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
++		"state", string_of_int (Xenbus_utils.int_of Xenbus_utils.Initialising);
+ 		"dev", Device_number.to_linux_device device_number;
+ 		"type", backendty_of_physty phystype;
+ 		"mode", string_of_mode mode;
+@@ -785,7 +786,7 @@
+ 	let back = [
+ 		"frontend-id", sprintf "%u" domid;
+ 		"online", "1";
+-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
++		"state", string_of_int (Xenbus_utils.int_of Xenbus_utils.Initialising);
+ 		"script", "/etc/xensource/scripts/vif";
+ 		"mac", mac;
+ 		"handle", string_of_int devid
+@@ -799,7 +800,7 @@
+ 
+ 	let front = [
+ 		"backend-id", string_of_int backend_domid;
+-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
++		"state", string_of_int (Xenbus_utils.int_of Xenbus_utils.Initialising);
+ 		"handle", string_of_int devid;
+ 		"mac", mac;
+ 		"disconnect", if carrier then "0" else "1";
 @@ -810,8 +811,8 @@
  	let extra_private_keys = extra_private_keys @
  	  (match mtu with | Some mtu when mtu > 0 -> [ "MTU", string_of_int mtu ] | _ -> []) @
@@ -256,6 +320,21 @@
  	) pcidevs;
  
  	let device = {
+@@ -1060,12 +1061,12 @@
+ 		"frontend-id", sprintf "%u" domid;
+ 		"online", "1";
+ 		"num_devs", string_of_int (List.length xsdevs);
+-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
++		"state", string_of_int (Xenbus_utils.int_of Xenbus_utils.Initialising);
+ 		"msitranslate", string_of_int (msitranslate);
+                 "pci_power_mgmt", string_of_int (pci_power_mgmt);
+ 	] and frontendlist = [
+ 		"backend-id", "0";
+-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
++		"state", string_of_int (Xenbus_utils.int_of Xenbus_utils.Initialising);
+ 	] in
+ 	Generic.add_device ~xs device (others @ xsdevs @ backendlist) frontendlist [];
+ 	()
 @@ -1090,7 +1091,7 @@
  	List.iter (fun dev ->
  		grant_access_resources xc domid dev.resources false;
@@ -304,6 +383,36 @@
  
  end
  
+@@ -1324,12 +1325,12 @@
+ 	let back = [
+ 		"frontend-id", sprintf "%u" domid;
+ 		"online", "1";
+-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
++		"state", string_of_int (Xenbus_utils.int_of Xenbus_utils.Initialising);
+ 	] in
+ 	let front = [
+ 		"backend-id", string_of_int backend_domid;
+ 		"protocol", (string_of_protocol protocol);
+-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
++		"state", string_of_int (Xenbus_utils.int_of Xenbus_utils.Initialising);
+ 	] in
+ 	Generic.add_device ~xs device back front [];
+ 	()
+@@ -1356,12 +1357,12 @@
+ 	let back = [
+ 		"frontend-id", sprintf "%u" domid;
+ 		"online", "1";
+-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
++		"state", string_of_int (Xenbus_utils.int_of Xenbus_utils.Initialising);
+ 	] in
+ 	let front = [
+ 		"backend-id", string_of_int backend_domid;
+ 		"protocol", (string_of_protocol protocol);
+-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
++		"state", string_of_int (Xenbus_utils.int_of Xenbus_utils.Initialising);
+ 	] in
+ 	Generic.add_device ~xs device back front []; 
+ 	()
 --- a/ocaml/xenops/device_common.ml
 +++ b/ocaml/xenops/device_common.ml
 @@ -15,12 +15,13 @@
@@ -387,7 +496,7 @@
                ) else (
                   debug "Unrecognized HAP platform value.  Assuming default settings for VM %s." (Uuid.to_string uuid);
                   default_flags
-@@ -116,7 +117,7 @@
+@@ -116,14 +117,14 @@
             ) else
                default_flags
          ) else [] in
@@ -396,6 +505,15 @@
  	let name = if info.name <> "" then info.name else sprintf "Domain-%d" domid in
  	try
  		let dom_path = xs.Xs.getdomainpath domid in
+ 		let vm_path = "/vm/" ^ (Uuid.to_string uuid) in
+ 		let vss_path = "/vss/" ^ (Uuid.to_string uuid) in
+-		let roperm = Xenbus.roperm_for_guest domid in
+-		let rwperm = Xenbus.rwperm_for_guest domid in
++		let roperm = Xenbus_utils.roperm_for_guest domid in
++		let rwperm = Xenbus_utils.rwperm_for_guest domid in
+ 		debug "Regenerating the xenstored tree under: [%s]" dom_path;
+ 
+ 		Xs.transaction xs (fun t ->
 @@ -202,17 +203,17 @@
  	| x -> Unknown x
  
@@ -1099,7 +1217,7 @@
  	mutable callback_introduce: ctx -> domid -> string -> unit;
  	mutable callback_release: ctx -> domid -> string -> unit;
  	mutable callback_devices: ctx -> domid -> dev_event -> unit;
-@@ -161,27 +162,27 @@
+@@ -161,40 +162,40 @@
  
  (* some helper to find out if a domain is running or not reading xc dominfo *)
  let is_running dom =
@@ -1135,6 +1253,28 @@
  
  
  let xal_devstate_of_string s =
+-	let state = try Xenbus.of_int (int_of_string s)
+-		    with _ -> Xenbus.Unknown in
++	let state = try Xenbus_utils.of_int (int_of_string s)
++		    with _ -> Xenbus_utils.Unknown in
+ 	match state with
+-	| Xenbus.Unknown      -> Closed
+-	| Xenbus.Initialising -> Connecting
+-	| Xenbus.InitWait     -> Connecting
+-	| Xenbus.Initialised  -> Connecting
+-	| Xenbus.Connected    -> Connected
+-	| Xenbus.Closing      -> Closing
+-	| Xenbus.Closed       -> Closed
++	| Xenbus_utils.Unknown      -> Closed
++	| Xenbus_utils.Initialising -> Connecting
++	| Xenbus_utils.InitWait     -> Connecting
++	| Xenbus_utils.Initialised  -> Connecting
++	| Xenbus_utils.Connected    -> Connected
++	| Xenbus_utils.Closing      -> Closing
++	| Xenbus_utils.Closed       -> Closed
+ 
+ let get_domstate ctx domid =
+ 	try Hashtbl.find ctx.tbl domid
 @@ -224,7 +225,7 @@
  let get_all_doms xc =
  	List.map (fun dom ->
@@ -2221,16 +2361,63 @@
  (* context query function *)
  val domain_is_dead : ctx -> domid -> bool
 --- a/ocaml/xenops/xenbus.ml
-+++ b/ocaml/xenops/xenbus.ml
-@@ -11,6 +11,8 @@
-  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  * GNU Lesser General Public License for more details.
-  *)
-+open Xenstore
-+
- type state = Unknown | Initialising | InitWait | Initialised | Connected
- 	     | Closing | Closed
- 
++++ /dev/null
+@@ -1,55 +0,0 @@
+-(*
+- * Copyright (C) 2006-2009 Citrix Systems Inc.
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU Lesser General Public License as published
+- * by the Free Software Foundation; version 2.1 only. with the special
+- * exception on linking described in file LICENSE.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU Lesser General Public License for more details.
+- *)
+-type state = Unknown | Initialising | InitWait | Initialised | Connected
+-	     | Closing | Closed
+-
+-
+-let int_of = function
+-  | Unknown      -> 0
+-  | Initialising -> 1
+-  | InitWait     -> 2
+-  | Initialised  -> 3
+-  | Connected    -> 4
+-  | Closing      -> 5
+-  | Closed       -> 6
+-
+-let of_int = function
+-  | 0 -> Unknown
+-  | 1 -> Initialising
+-  | 2 -> InitWait
+-  | 3 -> Initialised
+-  | 4 -> Connected
+-  | 5 -> Closing
+-  | 6 -> Closed
+-  | _ -> Unknown
+-
+-let of_string x = of_int (int_of_string x)
+-let string_of x = string_of_int (int_of x)
+-
+-let to_string_desc = function
+-	| Unknown      -> "unknown"
+-	| Initialising -> "initialising"
+-	| InitWait     -> "initwait"
+-	| Initialised  -> "initialised"
+-	| Connected    -> "connected"
+-	| Closing      -> "closing"
+-	| Closed       -> "closed"
+-
+-(** Allows a guest to read/write this node and children *)
+-let rwperm_for_guest domid = 
+-	(domid, Xsraw.PERM_NONE, [])
+-
+-(** Dom0 can read/write this node and children, domU can only read children *)
+-let roperm_for_guest domid =
+-	(0, Xsraw.PERM_NONE, [ (domid, Xsraw.PERM_READ) ])
 --- a/ocaml/xenops/xenops_helpers.ml
 +++ b/ocaml/xenops/xenops_helpers.ml
 @@ -12,10 +12,11 @@
@@ -3489,3 +3676,63 @@
 -val wait_for : xs:Xs.xsh -> ?timeout:float -> 'a t -> 'a
 +val wait_for : xs:Xenstore.Xs.xsh -> ?timeout:float -> 'a t -> 'a
  
+--- /dev/null
++++ b/ocaml/xenops/xenbus_utils.ml
+@@ -0,0 +1,57 @@
++(*
++ * Copyright (C) 2006-2009 Citrix Systems Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU Lesser General Public License as published
++ * by the Free Software Foundation; version 2.1 only. with the special
++ * exception on linking described in file LICENSE.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ *)
++open Xenstore
++
++type state = Unknown | Initialising | InitWait | Initialised | Connected
++	     | Closing | Closed
++
++
++let int_of = function
++  | Unknown      -> 0
++  | Initialising -> 1
++  | InitWait     -> 2
++  | Initialised  -> 3
++  | Connected    -> 4
++  | Closing      -> 5
++  | Closed       -> 6
++
++let of_int = function
++  | 0 -> Unknown
++  | 1 -> Initialising
++  | 2 -> InitWait
++  | 3 -> Initialised
++  | 4 -> Connected
++  | 5 -> Closing
++  | 6 -> Closed
++  | _ -> Unknown
++
++let of_string x = of_int (int_of_string x)
++let string_of x = string_of_int (int_of x)
++
++let to_string_desc = function
++	| Unknown      -> "unknown"
++	| Initialising -> "initialising"
++	| InitWait     -> "initwait"
++	| Initialised  -> "initialised"
++	| Connected    -> "connected"
++	| Closing      -> "closing"
++	| Closed       -> "closed"
++
++(** Allows a guest to read/write this node and children *)
++let rwperm_for_guest domid = 
++	(domid, Xsraw.PERM_NONE, [])
++
++(** Dom0 can read/write this node and children, domU can only read children *)
++let roperm_for_guest domid =
++	(0, Xsraw.PERM_NONE, [ (domid, Xsraw.PERM_READ) ])
