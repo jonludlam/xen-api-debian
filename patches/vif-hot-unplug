@@ -1,11 +1,10 @@
---- a/scripts/vif
-+++ b/scripts/vif
-@@ -255,7 +255,7 @@
-     fi
-     ;;
- 
--remove)
-+remove | offline)
-     if [ "${TYPE}" = "vif" ] ;then
-         call_hook_script $DOMID "${ACTION}"
- 		# Unclear whether this is necessary, since netback also does it:
+--- a/scripts/xen-backend.rules
++++ b/scripts/xen-backend.rules
+@@ -1,7 +1 @@
+-SUBSYSTEM=="xen-backend", KERNEL=="tap*", RUN+="/etc/xensource/scripts/tap $env{ACTION}"
+-SUBSYSTEM=="xen-backend", KERNEL=="vbd*", RUN+="/opt/xensource/sm/blktap2.py vbd.uevent"
+-
+ SUBSYSTEM=="xen-backend", KERNEL=="vif*", RUN+="/etc/xensource/scripts/vif $env{ACTION} vif"
+-SUBSYSTEM=="net",         KERNEL=="tap*", RUN+="/etc/xensource/scripts/vif $env{ACTION} tap"
+-
+-KERNEL=="evtchn", NAME="xen/%k"
