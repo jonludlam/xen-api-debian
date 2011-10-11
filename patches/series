@@ -1,9 +1,7 @@
-0001-rename-xen-ocaml-packages.patch
 0002-dont-build-xiu.patch
 0003-no-runstate-info.patch
 0004-no-max_nr_vcpus.patch
 0005-fix-xenguest.patch
-0006-use-sysfs-rather-than-proc.patch
 0007-qemu-fixes.patch
 0008-remove-missing-xc-calls.patch
 0009-install-locations.patch
@@ -16,10 +14,7 @@
 0016-pygrub-path.patch
 0017-udev-fixes.patch
 0018-vncterm-fixes.patch
-0019-dom0-memory-record.patch
-0020-fix-rewrite-management-interface.patch
 0021-pam.patch
-0022-dom0-setup-idempotent.patch
 0023-python-XenAPI-install-path.patch
 0024-xapissl-script-install.patch
 0025-vif-hot-unplug.patch
