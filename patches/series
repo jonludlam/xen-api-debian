@@ -18,3 +18,4 @@
 0023-python-XenAPI-install-path.patch
 0024-xapissl-script-install.patch
 0025-vif-hot-unplug.patch
+new-ocaml-layout
