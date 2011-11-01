@@ -1,43 +1,45 @@
 Source: xen-api
-Section: unknown
+Section: kernel
 Priority: extra
 Maintainer: Jon Ludlam <jonathan.ludlam@eu.citrix.com>
-Build-Depends: debhelper (>= 8.0.0), ocaml-native-compilers, ocaml-findlib, camlp4, camlp4-extra, autotools-dev, dh-autoreconf, libtype-conv-camlp4-dev, libxmlm-ocaml-dev, uuid-dev, xen-api-libs, omake, libxen-ocaml-dev, libxen-ocaml-4.1, libpam-dev, zlib1g-dev, xen-utils, libxen-dev, libounit-ocaml-dev
+Build-Depends: debhelper (>= 8.0.0), ocaml-native-compilers, ocaml-findlib, camlp4, camlp4-extra, autotools-dev, dh-autoreconf, libtype-conv-camlp4-dev, libxmlm-ocaml-dev, uuid-dev, libxcp-ocaml, libxcp-ocaml-dev, omake, libxen-ocaml-dev, libxen-ocaml-4.1, libpam-dev, zlib1g-dev, xen-utils, libxen-dev, libounit-ocaml-dev, dh-ocaml
 Standards-Version: 3.9.2
-Homepage: <insert the upstream URL, if relevant>
+Homepage: http://www.xen.org/XCP/
 #Vcs-Git: git://git.debian.org/collab-maint/xen-api.git
 #Vcs-Browser: http://git.debian.org/?p=collab-maint/xen-api.git;a=summary
 
-Package: xapi
+Package: xcp-xapi
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, squeezed, v6d, fe, xen-sm, xen-hypervisor-4.1, xen-utils-4.1, stunnel, hwdata, eliloader
+Depends: ${shlibs:Depends}, ${misc:Depends}, xcp-squeezed, xcp-v6d, xcp-fe, xen-sm, xen-hypervisor-4.1, xen-utils-4.1, stunnel, hwdata, eliloader
 Recommends: vncterm
 Description: The Xen API server
  The Xen API server, which allows the control of the virtual machines hosted via
  the XenAPI.
 
-Package: xen-api-doc
-Architecture: all
-Description: documentation for xen-api
- <insert long description, indented with spaces>
-
-Package: squeezed
+Package: xcp-squeezed
 Architecture: any
-Depends: ${shlibs:Depends}, xen-hypervisor
+Depends: ${shlibs:Depends}, ${misc:Depends}, xen-hypervisor
 Description: A daemon in charge of ballooning xen domains
- This daemon takes requests in the form of xenstore trees and balloons 
- domains up and down.
+ This daemon takes requests from xapi in the form of xenstore trees 
+ and balloons domains up and down. 
 
-Package: v6d
+Package: xcp-v6d
 Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: The feature daemon for xapi. 
  It's only temporarily being installed until a better solution is 
  sorted.
 
-Package: ocaml-xapi-client
+Package: libxenapi-ocaml-dev
 Architecture: any
-Description: The ocaml libraries for talking to xapi
+Depends: ${ocaml:Depends}, ${misc:Depends}
+Description: OCaml bindings for the Xen API
+ This package contains ocaml libraries for the Xen API. These will
+ allow a program to communicate with a VM host running xapi.
 
-Package: xapi-debug
+Package: xcp-xapi-debug
+Section: debug
 Architecture: any
+Depends: xcp-xapi, ${misc:Depends}
 Description: Binary utils to help debug xapi
+ 
