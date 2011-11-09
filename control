@@ -1,5 +1,5 @@
 Source: xen-api
-Section: kernel
+Section: admin
 Priority: extra
 Maintainer: Jon Ludlam <jonathan.ludlam@eu.citrix.com>
 Build-Depends: debhelper (>= 8.0.0), ocaml-native-compilers, ocaml-findlib, camlp4, camlp4-extra, autotools-dev, dh-autoreconf, libtype-conv-camlp4-dev, libxmlm-ocaml-dev, uuid-dev, libxcp-ocaml, libxcp-ocaml-dev, omake, libxen-ocaml-dev, libxen-ocaml-4.1, libpam-dev, zlib1g-dev, xen-utils, libxen-dev, libounit-ocaml-dev, dh-ocaml
@@ -32,6 +32,7 @@ Description: The feature daemon for xapi.
 
 Package: libxenapi-ocaml-dev
 Architecture: any
+Section: ocaml
 Depends: ${ocaml:Depends}, ${misc:Depends}
 Description: OCaml bindings for the Xen API
  This package contains ocaml libraries for the Xen API. These will
