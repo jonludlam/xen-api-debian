@@ -1,6 +1,6 @@
 #! /bin/sh
 ### BEGIN INIT INFO
-# Provides:          squeezed
+# Provides:          xcp-squeezed
 # Required-Start:    $remote_fs $syslog
 # Required-Stop:     $remote_fs $syslog
 # Default-Start:     2 3 4 5
@@ -11,17 +11,14 @@
 ### END INIT INFO
 
 # Author: Jon Ludlam <jonathan.ludlam@eu.citrix.com>
-#
-# Please remove the "Author" lines above and replace them
-# with your own name if you copy and modify this script.
 
 # Do NOT "set -e"
 
 # PATH should only include /usr/* if it runs after the mountnfs.sh script
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
 DESC="Description of the service"
-NAME=squeezed
-DAEMON=/usr/lib/xen-common/xapi/libexec/$NAME
+NAME=xcp-squeezed
+DAEMON=/usr/lib/xen-common/xapi/libexec/squeezed
 PIDFILE=/var/run/$NAME.pid
 DAEMON_ARGS="-daemon -pidfile $PIDFILE"
 SCRIPTNAME=/etc/init.d/$NAME
